@@ -1,8 +1,8 @@
 # ==============================================================================
 # MASTER PIPELINE: WHEAT GxE, MICRO-PHENOLOGY, AND CHRONIC VEGETATIVE STRESS
 # Repository: Physiological and Molecular Basis of Tiller Number In Wheat Under Heat Stress
-# Author: Apoorva Ashu, ICAR-IARI, New Delhi
-# Version: 13-09-2026 (v5)
+# Author: Apoorva Ashu, PhD, ICAR-IARI, New Delhi
+# Version: 04-10-2026 (v9)
 # Description: Evaluates 200 wheat genotypes under chronic vegetative thermal 
 #              stress. Pre-calculates exact empirical tiller dynamics & AUTPC,
 #              extracts BLUEs safely, computes TCE, TSI, and TCESI, dynamically
@@ -35,11 +35,11 @@
 # 0A. WORKING DIRECTORY & VERSIONED OUTPUT SETUP ####
 # ==========================================
 # Project root: always the GxE Analysis folder, regardless of how R was launched.
-project_root <- "D:/PhD School/Research/Wheat_GxE_Analysis"
+project_root <- getwd()
 
 # Auto-generate a date-stamped output subdirectory (mirrors your existing naming convention).
-# e.g. on 2026-09-13 this produces: Version_V5_13-09-26
-output_version <- paste0("Version_V5_", format(Sys.Date(), "%d-%m-%y"))
+# e.g. on 2026-09-15 this produces: Version_V6_15-09-26
+output_version <- "Results_Output"
 output_dir     <- file.path(project_root, output_version)
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -109,7 +109,7 @@ for (current_sheet in env_metadata$Sheet) {
   } else {
     message(paste("\n--- Computing BLUEs for", current_sheet, "---"))
     
-    trial_data <- read_excel("D:/PhD School/Research/FinalDataYear1.xlsx", sheet = current_sheet)
+    trial_data <- read_excel(file.path(project_root, "FinalDataYear1.xlsx"), sheet = current_sheet)
     trial_data <- trial_data %>% filter(!is.na(Genotype))
     
     trial_data$Genotype <- as.factor(trial_data$Genotype)
@@ -920,7 +920,7 @@ dev.off()
 # ==========================================
 # 9. METEOROLOGICAL ANALYSIS: THERMAL VELOCITY & GDD ####
 # ==========================================
-weather_data <- read_excel("D:/PhD School/Research/Weather_Master.xlsx", sheet = "Sheet1")
+weather_data <- read_excel(file.path(project_root, "Weather_Master.xlsx"), sheet = "Sheet1")
 weather_data$Date <- as.Date(weather_data$Date)
 base_temp <- 5
 
@@ -976,12 +976,40 @@ pheno_df <- master_gxe %>%
 pheno_scaled <- scale(pheno_df)
 
 set.seed(42)
-kmeans_result <- kmeans(pheno_scaled, centers = 3, nstart = 25)
-pheno_df$Raw_Cluster <- as.factor(kmeans_result$cluster)
+  library(cluster)
+  sil_widths <- numeric(10)
+  for(k in 2:10) {
+    km <- kmeans(pheno_scaled, centers = k, nstart = 25)
+    sil <- silhouette(km$cluster, dist(pheno_scaled))
+    sil_widths[k] <- mean(sil[, 3])
+  }
+  best_k <- which.max(sil_widths)
+  
+  # Generate Silhouette Plot
+  sil_df <- data.frame(K = 2:10, Silhouette = sil_widths[2:10])
+  p_sil <- ggplot(sil_df, aes(x = K, y = Silhouette)) +
+    geom_line(linewidth = 1.2, color = "darkblue") +
+    geom_point(size = 4, shape = 21, fill = "lightblue", stroke = 1) +
+    geom_vline(xintercept = best_k, linetype = "dashed", color = "red", linewidth = 1) +
+    scale_x_continuous(breaks = 2:10) + pub_theme +
+    labs(title = "Silhouette Width Optimization for K-Means", subtitle = paste0("Optimal K = ", best_k), x = "Number of Clusters (K)", y = "Average Silhouette Width")
+  dir.create("Phenology_And_Clustering", showWarnings = FALSE)
+  ggsave("Phenology_And_Clustering/Silhouette_Optimization_Plot.png", plot = p_sil, width = 8, height = 6, dpi = 600)
+  write.csv(sil_df, "Phenology_And_Clustering/Silhouette_Width_Table.csv", row.names = FALSE)
+  
+  kmeans_result <- kmeans(pheno_scaled, centers = best_k, nstart = 25)
+  pheno_df$Raw_Cluster <- as.factor(kmeans_result$cluster)
+  cluster_profiles <- pheno_df %>% group_by(Raw_Cluster) %>% summarise(Speed = mean(Rate_E_T1)) %>% arrange(desc(Speed))
+  
+  if(best_k == 2) {
+    c_names <- c("Fast Establishers", "Slow Establishers")
+  } else if(best_k == 3) {
+    c_names <- c("Fast Establishers", "Intermediate Establishers", "Slow Establishers")
+  } else {
+    c_names <- paste0("Cluster_", 1:best_k)
+  }
+  cluster_map <- data.frame(Raw_Cluster = cluster_profiles$Raw_Cluster, Cluster = c_names)
 
-cluster_profiles <- pheno_df %>% group_by(Raw_Cluster) %>% summarise(Speed = mean(Rate_E_T1)) %>% arrange(desc(Speed))
-cluster_map <- data.frame(Raw_Cluster = cluster_profiles$Raw_Cluster,
-                          Cluster = c("Early/Fast Establishers", "Intermediate Establishers", "Late/Slow Establishers"))
 
 pheno_df <- pheno_df %>%
   rownames_to_column("Genotype") %>%
@@ -1169,35 +1197,46 @@ print(contrast(dur_contrasts, "pairwise"))
 sink()
 
 # ==========================================
-# 13. STAGE-WISE PREDICTIVE POWER OF YIELD ####
+# 13. STAGE-WISE PREDICTIVE POWER & INCREMENTAL R2 ####
 # ==========================================
 stage_traits <- c("T1_Count", "T2_Count", "T3_Count", "Tmax_Count", "PT_Count")
+clean_labels <- c("T1_Count"="T1", "T2_Count"="T2", "T3_Count"="T3", 
+                  "Tmax_Count"="Tmax", "PT_Count"="PT")
 
 stage_predictive_power <- map_dfr(levels(master_gxe$Environment), function(env) {
-  d <- master_gxe %>% filter(Environment == env)
+  d <- master_gxe %>% filter(Environment == env) %>% drop_na(all_of(c(stage_traits, "GrainYld")))
   map_dfr(stage_traits, function(st) {
     m <- lm(as.formula(paste("GrainYld ~", st)), data = d)
-    tibble(Environment = env, Stage = st, R2 = summary(m)$r.squared,
+    tibble(Environment = env, Stage = st, 
+           Stage_Clean = clean_labels[st],
+           R2 = summary(m)$r.squared,
            Slope = coef(m)[2], p_value = summary(m)$coefficients[2, 4])
   })
-})
+}) %>% mutate(Stage_Clean = factor(Stage_Clean, levels = c("T1", "T2", "T3", "Tmax", "PT")))
 write.csv(stage_predictive_power, "Stage_Predictive_Power_By_Environment.csv", row.names = FALSE)
 
-stage_power_plot <- ggplot(stage_predictive_power, aes(x = factor(Stage, levels = stage_traits), y = R2, fill = Environment)) +
-  geom_col(position = "dodge", color = "black") +
-  scale_fill_npg() + pub_theme +
-  labs(title = "Predictive Power of Each Developmental Stage for Grain Yield",
-       subtitle = "Highest bar per environment = the stage most worth measuring in that thermal regime",
-       x = "Developmental Stage", y = expression(R^2 ~ "(single-stage linear model)"))
-ggsave("Stage_Predictive_Power_Plot.png", plot = stage_power_plot, width = 10, height = 6, dpi = 300)
+plot_A <- ggplot(stage_predictive_power, aes(x = Stage_Clean, y = R2, color = Environment, group = Environment)) +
+  geom_line(linewidth = 1.2, alpha = 0.8) +
+  geom_point(aes(shape = Environment), size = 3.5, fill = "white", stroke = 1.2) +
+  scale_color_npg() +
+  scale_shape_manual(values = c(21, 22, 23, 24)) +
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.1))) +
+  pub_theme + theme(panel.grid.major.y = element_line(color = "grey90", linewidth = 0.5)) +
+  labs(
+    title = "A. Absolute Predictive Power",
+    subtitle = "Variance in grain yield explained by each stage independently",
+    x = "Developmental Stage",
+    y = expression("Single-Stage Linear Model " ~ R^2)
+  )
 
 # ==========================================
 # 13B. INCREMENTAL PREDICTIVE VALUE OF EACH STAGE (ADJUSTED R-SQUARED) ####
 # ==========================================
 incremental_stages <- c("T1_Count", "T2_Count", "T3_Count", "Tmax_Count")
+clean_inc_labels <- c("T1_Count"="T1", "T2_Count"="+ T2", "T3_Count"="+ T3", "Tmax_Count"="+ Tmax")
 
 incremental_r2 <- map_dfr(levels(master_gxe$Environment), function(env) {
-  d <- master_gxe %>% filter(Environment == env)
+  d <- master_gxe %>% filter(Environment == env) %>% drop_na(all_of(c(incremental_stages, "GrainYld")))
   formula_strs <- accumulate(incremental_stages, ~paste(.x, "+", .y))
   formula_strs <- paste("GrainYld ~", formula_strs)
   
@@ -1206,19 +1245,39 @@ incremental_r2 <- map_dfr(levels(master_gxe$Environment), function(env) {
   tibble(
     Environment = env,
     Stage_Added = incremental_stages,
+    Stage_Label = clean_inc_labels[incremental_stages],
     Cumulative_Adj_R2 = r2_vals,
     Incremental_Adj_R2 = c(r2_vals[1], diff(r2_vals))
   )
-})
+}) %>% mutate(Stage_Label = factor(Stage_Label, levels = c("T1", "+ T2", "+ T3", "+ Tmax")))
 write.csv(incremental_r2, "Incremental_Stage_R2_By_Environment.csv", row.names = FALSE)
 
-incremental_plot <- ggplot(incremental_r2, aes(x = factor(Stage_Added, levels = incremental_stages), y = Incremental_Adj_R2, fill = Environment)) +
-  geom_col(position = "dodge", color = "black") +
-  scale_fill_npg() + pub_theme +
-  labs(title = "Unique Predictive Contribution of Each Stage (Beyond Earlier Stages)",
-       subtitle = "How much does each successive stage add to Adjusted R^2, once earlier stages are already in the model?",
-       x = "Stage Added to the Model", y = expression(Delta ~ R[adj]^2))
-ggsave("Incremental_Stage_R2_Plot.png", plot = incremental_plot, width = 10, height = 6, dpi = 300)
+plot_B <- ggplot(incremental_r2, aes(x = Stage_Label, y = Cumulative_Adj_R2, color = Environment, group = Environment)) +
+  geom_line(linewidth = 1.2, alpha = 0.8) +
+  geom_point(aes(shape = Environment), size = 3.5, fill = "white", stroke = 1.2) +
+  geom_text_repel(
+    data = incremental_r2 %>% filter(Incremental_Adj_R2 > 0.015, Stage_Added != "T1_Count"),
+    aes(label = sprintf("+%.2f", Incremental_Adj_R2)),
+    size = 3.5, fontface = "bold", show.legend = FALSE,
+    nudge_x = -0.15, nudge_y = 0.03, segment.color = "grey70"
+  ) +
+  scale_color_npg() +
+  scale_shape_manual(values = c(21, 22, 23, 24)) +
+  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.1))) +
+  pub_theme + theme(panel.grid.major.y = element_line(color = "grey90", linewidth = 0.5)) +
+  labs(
+    title = "B. Cumulative Predictive Power",
+    subtitle = "Adj. R² trajectory as successive tiller stages are added",
+    x = "Stages Included in Multiple Regression",
+    y = expression("Cumulative Adjusted " ~ R^2)
+  )
+
+combined_r2_plot <- (plot_A + plot_B) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom", legend.title = element_blank())
+
+ggsave("Developmental_Predictive_Power_Combined.png", plot = combined_r2_plot, 
+       width = 12, height = 6, dpi = 600, bg = "white")
 
 
 # ==========================================
@@ -1239,59 +1298,44 @@ library(semPlot)
 
 print("--- Executing Structural Equation Modeling (Path Analysis) ---")
 
-# ------------------------------------------------------------------
-# Guard: recompute AUTPC_Asymmetry if missing
-# ------------------------------------------------------------------
-if (!"AUTPC_Asymmetry" %in% colnames(master_gxe)) {
-  message("AUTPC_Asymmetry not found — recomputing.")
-  master_gxe <- master_gxe %>%
-    select(-any_of(c("Int_E_T1","Int_T1_T2","Int_T2_T3","Int_T3_Tmax","Total_T1_Tmax"))) %>%
-    left_join(
-      env_metadata %>% select(Environment, Int_E_T1, Int_T1_T2, Int_T2_T3, Int_T3_Tmax),
-      by = "Environment"
-    ) %>%
-    rowwise() %>%
-    mutate(
-      AUTPC_Early     = 0.5*(0 + T1_Count)*Int_E_T1 +
-                        0.5*(T1_Count + T2_Count)*Int_T1_T2,
-      AUTPC_Late      = 0.5*(T2_Count + T3_Count)*Int_T2_T3 +
-                        0.5*(T3_Count + Tmax_Count)*Int_T3_Tmax,
-      AUTPC_Asymmetry = ifelse(is.na(AUTPC) | AUTPC == 0, NA_real_,
-                               (AUTPC_Early - AUTPC_Late) / AUTPC)
-    ) %>%
-    ungroup()
-}
-
-master_gxe <- master_gxe %>%
-  mutate(AUTPC_Asymmetry = ifelse(
-    is.infinite(AUTPC_Asymmetry) | is.nan(AUTPC_Asymmetry),
-    NA_real_, AUTPC_Asymmetry
-  ))
 
 # ------------------------------------------------------------------
-# 15A. Extended Biophysical Path Model
+# 15A. Tiller-Only Confirmatory Path Model
+#
+# Rationale: The study objective is tiller number under heat stress.
+# The model tests a single biologically-motivated hypothesis:
+#   Does T1 (early tillering vigour) have a DIRECT effect on productive
+#   tiller retention (PT), BEYOND its indirect sequential contribution
+#   (T1 → T2 → T3 → Tmax → PT)?  And does this direct path intensify
+#   under acute heat stress (Dharwad vs Delhi)?
+#
+# Variables: only raw tiller counts (T1, T2, T3, Tmax, PT) + grain yield.
+# TKW and AUTPC_Asymmetry removed — post-anthesis / derived traits that
+# introduce endogeneity and dilute the tiller-number focus.
 # ------------------------------------------------------------------
 path_model <- '
-  # --- Sequential development chain ---
+  # Sequential developmental chain (biologically constrained)
   T2_Count   ~ T1_Count
-  Tmax_Count ~ T2_Count + T1_Count
+  T3_Count   ~ T2_Count
+  Tmax_Count ~ T3_Count
 
-  # --- Sink survival ---
-  PT_Count   ~ Tmax_Count + T1_Count + T2_Count + AUTPC_Asymmetry
+  # Key hypothesis: T1 direct effect on productive tiller retention
+  # (tests whether early vigour compensates for stress-driven tiller loss)
+  PT_Count   ~ Tmax_Count + T1_Count
 
-  # --- Final yield ---
-  GrainYld   ~ PT_Count + TKW + T1_Count + AUTPC_Asymmetry
-
-  # --- Methodological / Structural Covariances ---
-  # We only covary AUTPC_Asymmetry with exogenous T1 and the peak Tmax.
-  T1_Count   ~~ AUTPC_Asymmetry
-  Tmax_Count ~~ AUTPC_Asymmetry
-  
-  # Contemporaneous and MI-recommended
-  PT_Count   ~~ TKW
-  T2_Count   ~~ PT_Count
-  T1_Count   ~~ Tmax_Count
+  # Yield formation via productive sinks
+  GrainYld   ~ PT_Count
 '
+
+# Human-readable labels that match pipeline conventions
+sem_node_labels <- c(
+  T1_Count   = "T1",
+  T2_Count   = "T2",
+  T3_Count   = "T3",
+  Tmax_Count = "Tmax",
+  PT_Count   = "PT",
+  GrainYld   = "GY"
+)
 
 dir.create("SEM_Path_Analysis", showWarnings = FALSE)
 sem_results_list     <- list()
@@ -1306,8 +1350,7 @@ for (env in env_list_sem) {
 
   env_data <- master_gxe %>%
     filter(Environment == env) %>%
-    select(T1_Count, T2_Count, T3_Count, Tmax_Count,
-           PT_Count, AUTPC_Asymmetry, GrainYld, TKW) %>%
+    select(T1_Count, T2_Count, T3_Count, Tmax_Count, PT_Count, GrainYld) %>%
     drop_na()
 
   if (nrow(env_data) < 10) {
@@ -1365,7 +1408,20 @@ for (env in env_list_sem) {
 
   tryCatch({
     png(paste0("SEM_Path_Analysis/Path_Diagram_", env, ".png"), width = 2400, height = 1800, res = 300)
-    semPaths(fit, what = "std", layout = "tree2", edge.label.cex = 1)
+    semPaths(
+      fit,
+      what           = "std",
+      layout         = "tree2",
+      edge.label.cex = 1.2,
+      sizeMan        = 10,
+      nodeLabels     = sem_node_labels[colnames(env_data)],
+      title          = TRUE,
+      title.cex      = 1.4,
+      style          = "ram",
+      nCharNodes     = 0,
+      color          = list(man = "lightblue")
+    )
+    title(main = paste("Path Analysis:", env), cex.main = 1.2)
     dev.off()
   }, error = function(e) {
     if (dev.cur() > 1) dev.off()
@@ -1433,8 +1489,7 @@ location_results <- list()
 
 for (loc in unique(master_gxe$Location)) {
   loc_data <- master_gxe %>% filter(Location == loc) %>%
-    select(T1_Count, T2_Count, T3_Count, Tmax_Count,
-           PT_Count, AUTPC_Asymmetry, GrainYld, TKW) %>%
+    select(T1_Count, T2_Count, T3_Count, Tmax_Count, PT_Count, GrainYld) %>%
     drop_na()
 
   if (nrow(loc_data) > 10) {
@@ -1478,7 +1533,7 @@ dir.create("Thermal_Logistic_Models", showWarnings = FALSE)
 if (!exists("window_gdd")) {
   message("window_gdd not found — recomputing from env_metadata + weather_data.")
   if (!exists("weather_data")) {
-    weather_data <- readxl::read_excel("D:/PhD School/Research/Weather_Master.xlsx", sheet = "Sheet1")
+    weather_data <- readxl::read_excel(file.path(project_root, "Weather_Master.xlsx"), sheet = "Sheet1")
     weather_data$Date <- as.Date(weather_data$Date)
     weather_data <- weather_data %>% mutate(Tmean = (Tmax + Tmin) / 2, Daily_GDD = ifelse(Tmean > 5, Tmean - 5, 0))
   }
@@ -1585,6 +1640,7 @@ if (!exists("thermal_summary")) {
   thermal_summary <- window_gdd %>% group_by(Environment) %>% summarise(Cumulative_GDD = sum(Window_GDD), .groups="drop")
 }
 
+GDD_PLOT_CAP <- 750  # maximum GDD to display — beyond this is extrapolation
 max_gdd_by_env <- thermal_summary %>% select(Environment, Cumulative_GDD)
 
 predicted_curves <- logistic_params_grouped %>%
@@ -1592,7 +1648,8 @@ predicted_curves <- logistic_params_grouped %>%
   inner_join(max_gdd_by_env, by = "Environment") %>%
   group_by(Environment, Group, Thermal_Ceiling_Asym, Thermal_Inflection_xmid, Growth_Window_scal, Cumulative_GDD) %>%
   reframe(
-    GDD = seq(0, Cumulative_GDD, length.out = 120),
+    # cap curve at GDD_PLOT_CAP so we never draw into extrapolation territory
+    GDD = seq(0, min(Cumulative_GDD, GDD_PLOT_CAP), length.out = 120),
     Count_Pred = Thermal_Ceiling_Asym / (1 + exp(-(GDD - Thermal_Inflection_xmid) / Growth_Window_scal))
   ) %>%
   ungroup()
@@ -1601,7 +1658,9 @@ logistic_plot <- ggplot() +
   geom_point(data = pooled_tillers, aes(x = GDD, y = Count, color = Group), alpha = 0.35, size = 1.8, position = position_jitter(width=10, height=0)) +
   geom_line(data = predicted_curves, aes(x = GDD, y = Count_Pred, color = Group), linewidth = 1.2, alpha = 0.95) +
   scale_color_manual(values = c("Top 5 Yielding (Elite)" = "#4575b4", "Bottom 5 Yielding (Susceptible)" = "#d73027")) +
-  facet_wrap(~ Environment, scales = "free_x") +
+  # shared x-axis scale across all four environments for direct comparison
+  facet_wrap(~ Environment) +
+  coord_cartesian(xlim = c(0, GDD_PLOT_CAP)) +
   pub_theme +
   labs(
     title = "Non-Linear Thermal Growth Trajectories Across Stress Gradients",
@@ -1612,3 +1671,190 @@ logistic_plot <- ggplot() +
 ggsave("Thermal_Logistic_Models/Elite_vs_Susceptible_Thermal_Curves_All_Envs.png", plot = logistic_plot, width = 12, height = 8, dpi = 600)
 
 print("--- Advanced Analysis Module (Sections 15 & 16) Complete ---")
+
+
+
+# ============================================================================== 
+# 11. CRITICAL WINDOW ALIGNMENT FRAMEWORK ####
+# ============================================================================== 
+# =============================================================================
+# CRITICAL WINDOW ALIGNMENT FRAMEWORK
+# Author: Apoorva Ashu, ICAR-IARI, New Delhi
+# Date: October 2026
+#
+# Description:
+# Identifies the temporal alignment between vegetative organogenesis and 
+# terminal yield determination. Compares the "Production Window" (interval
+# with peak tillering frequency) against the "Decision Window" (interval
+# whose non-overlapping tiller gains contribute the highest Shapley R2 share
+# to final yield).
+#
+# References:
+# - Shapley, L. S. (1953). A value for n-person games.
+# - Lindeman, Merenda & Gold (1980). Relative importance (LMG decomposition).
+# =============================================================================
+
+suppressMessages({ library(ggplot2); library(dplyr); library(tidyr) })
+
+# ---- 1. CONFIGURATION & DATA LOADING -----------------------------------------
+set.seed(42)
+NBOOT <- 1000
+
+# Modify this path to point to your dataset
+input_file <- file.path(output_dir, "Master_GxE_Matrix_Complete.csv")
+
+
+d <- read.csv(input_file, stringsAsFactors = FALSE)
+
+# Transform cumulative counts into discrete, non-overlapping interval gains
+d$G1 <- d$T1_Count                     # Emergence to T1
+d$G2 <- d$T2_Count   - d$T1_Count      # T1 to T2
+d$G3 <- d$T3_Count   - d$T2_Count      # T2 to T3
+d$G4 <- d$Tmax_Count - d$T3_Count      # T3 to Tmax
+d$G5 <- d$PT_Count   - d$Tmax_Count    # Tmax to PT (retention/abortion phase)
+
+VEG <- c('G1','G2','G3','G4'); ALL <- c(VEG, 'G5')
+LAB <- c(G1 = 'E\u2013T1', G2 = 'T1\u2013T2', G3 = 'T2\u2013T3', G4 = 'T3\u2013Tmax', G5 = 'Tmax\u2013PT\n(retention)')
+PEAKMAP <- c('Very Early (E-T1)' = 'G1', 'Early Vigor (T1-T2)' = 'G2', 'Late Vigor (T2-T3)' = 'G3', 'Terminal Vigor (T3-Tmax)' = 'G4')
+
+d <- d[complete.cases(d[, c(ALL, 'GrainYld')]), ]
+
+# ---- 2. EXACT SHAPLEY (LMG) R2 DECOMPOSITION ---------------------------------
+r2 <- function(y, X) { 
+  if (ncol(X) == 0) return(0)
+  f <- .lm.fit(cbind(1, X), y)
+  1 - sum(f$residuals^2) / sum((y - mean(y))^2) 
+}
+
+shapley <- function(y, X) {
+  p <- ncol(X); M <- 2^p; R <- numeric(M)
+  bits <- function(m) as.logical(intToBits(m)[1:p])
+  for (m in 0:(M - 1)) R[m + 1] <- r2(y, X[, bits(m), drop = FALSE])
+  phi <- numeric(p)
+  for (m in 0:(M - 1)) { 
+    b <- bits(m); k <- sum(b)
+    for (j in which(!b)) {
+      phi[j] <- phi[j] + factorial(k) * factorial(p - k - 1) / factorial(p) * (R[m + 1 + 2^(j - 1)] - R[m + 1]) 
+    }
+  }
+  phi 
+}
+
+# Within-environment standardisation (removes environment main effects for pooled modeling)
+zstd <- function(df, vars) { 
+  df %>% group_by(Environment) %>% mutate(across(all_of(c(vars, 'GrainYld')), ~ as.numeric(scale(.x)))) %>% ungroup() 
+}
+
+run_level <- function(df, level, unit, vars) {
+  pooled <- length(unique(df$Environment)) > 1
+  dz <- if (pooled) zstd(df, vars) else df %>% mutate(across(all_of(vars), ~ as.numeric(scale(.x))))
+  y <- dz$GrainYld; X <- as.matrix(dz[, vars])
+  phi <- shapley(y, X)
+  
+  # 1,000 Bootstrap resamples for rank probability
+  gen <- unique(dz$Genotype); idx <- split(seq_len(nrow(dz)), dz$Genotype)
+  B <- t(replicate(NBOOT, { 
+    g <- sample(gen, replace = TRUE)
+    i <- unlist(idx[g], use.names = FALSE)
+    shapley(y[i], X[i, , drop = FALSE]) 
+  }))
+  top <- tabulate(apply(B, 1, which.max), nbins = length(vars))
+  
+  # Production window: % genotypes whose maximal tillering rate falls in each interval
+  pk <- table(factor(PEAKMAP[df$Peak_Phase], levels = vars))
+  
+  data.frame(Level = level, Unit = unit, Model = ifelse(length(vars) == 5, 'Full (incl. retention)', 'Vegetative only'),
+             Interval_Code = vars, Interval = LAB[vars],
+             Shapley_R2 = phi, Share_pct = 100 * phi / sum(phi),
+             CI_lo = apply(B, 2, quantile, 0.025), CI_hi = apply(B, 2, quantile, 0.975),
+             Boot_Rank1_pct = 100 * top / NBOOT, Total_R2 = sum(phi),
+             Peak_pct = { pv <- as.numeric(100 * pk[vars] / sum(pk)); pv[vars == 'G5'] <- NA; pv },
+             N_obs = nrow(dz))
+}
+
+# ---- 3. EXECUTE ACROSS ENVIRONMENTS AND SCALES -------------------------------
+units <- list(
+  list('Environment', 'Delhi S1',   d$Environment == 'Delhi_S1'),
+  list('Environment', 'Delhi S2',   d$Environment == 'Delhi_S2'),
+  list('Environment', 'Dharwad S1', d$Environment == 'Dharwad_S1'),
+  list('Environment', 'Dharwad S2', d$Environment == 'Dharwad_S2'),
+  list('Location',    'Delhi',      d$Location == 'Delhi'),
+  list('Location',    'Dharwad',    d$Location == 'Dharwad'),
+  list('Global',      'Global',     rep(TRUE, nrow(d))))
+
+res <- list()
+for (u in units) {
+  for (vars in list(ALL, VEG)) {
+    cat('Running', u[[2]], '-', length(vars), 'intervals\n')
+    res[[length(res) + 1]] <- run_level(d[u[[3]], ], u[[1]], u[[2]], vars)
+  }
+}
+R <- do.call(rbind, res)
+num <- sapply(R, is.numeric); R[num] <- lapply(R[num], round, 3)
+write.csv(R, file.path(output_dir, 'CWA_Shapley_Decomposition_All_Levels.csv'), row.names = FALSE)
+
+# ---- 4. ALIGNMENT SUMMARY ----------------------------------------------------
+S <- R %>% filter(Model == 'Full (incl. retention)') %>% group_by(Level, Unit) %>%
+  summarise(Production_Window = Interval[which.max(replace(Peak_pct, is.na(Peak_pct), -1))],
+            Production_pct = max(Peak_pct, na.rm = TRUE),
+            Decision_Window = Interval[which.max(Share_pct)], Decision_Share_pct = max(Share_pct),
+            Decision_Rank1_Boot_pct = Boot_Rank1_pct[which.max(Share_pct)],
+            Total_R2 = first(Total_R2),
+            Cum_Share_by_T1 = Share_pct[1], Cum_Share_by_T2 = sum(Share_pct[1:2]),
+            Cum_Share_by_T3 = sum(Share_pct[1:3]), Cum_Share_by_Tmax = sum(Share_pct[1:4]), .groups = 'drop') %>%
+  mutate(Alignment = ifelse(Production_Window == Decision_Window, 'Aligned', 'Decoupled'),
+         across(where(is.numeric), ~ round(.x, 1)))
+SV <- R %>% filter(Model == 'Vegetative only') %>% group_by(Level, Unit) %>%
+  summarise(Decision_Window_VegOnly = Interval[which.max(Share_pct)], VegOnly_Share_pct = round(max(Share_pct), 1),
+            VegOnly_Rank1_Boot_pct = round(Boot_Rank1_pct[which.max(Share_pct)], 1), VegOnly_Total_R2 = round(first(Total_R2), 3), .groups = 'drop')
+S <- left_join(S, SV, by = c('Level', 'Unit'))
+S$Unit <- factor(S$Unit, levels = sapply(units, `[[`, 2)); S <- S[order(S$Unit), ]
+write.csv(S, file.path(output_dir, 'CWA_Alignment_Summary.csv'), row.names = FALSE)
+print(as.data.frame(S), width = 250)
+
+# ---- 5. GENERATE PUBLICATION FIGURE ------------------------------------------
+F <- R %>% filter(Model == 'Full (incl. retention)') %>%
+  mutate(Unit_lab = factor(Unit, levels = rev(c('Delhi S1', 'Delhi S2', 'Dharwad S1', 'Dharwad S2', 'Delhi', 'Dharwad', 'Global'))),
+         Level = factor(Level, levels = c('Environment', 'Location', 'Global')),
+         Interval = factor(Interval, levels = LAB))
+
+P1 <- F %>% transmute(Level, Unit_lab, Interval, Panel = 'A  Production window\n(% genotypes with peak tillering rate)', Value = Peak_pct, 
+                      Txt = ifelse(is.na(Peak_pct), 'n/a', ifelse(Peak_pct == 0, '', ifelse(Peak_pct < 1, '<1', sprintf('%.0f', Peak_pct)))))
+P2 <- F %>% transmute(Level, Unit_lab, Interval, Panel = 'B  Decision window\n(% of explained yield variance, Shapley R\u00b2)', Value = Share_pct,
+                      Txt = ifelse(Share_pct < 1 & Boot_Rank1_pct == 0, '<1\n[0%]', sprintf('%.0f\n[%.0f%%]', Share_pct, Boot_Rank1_pct)))
+
+PP <- bind_rows(P1, P2)
+PP <- PP %>% group_by(Panel, Unit_lab) %>% mutate(IsMax = !is.na(Value) & Value == max(Value, na.rm = TRUE)) %>% ungroup()
+
+# Merge Total_R2 into the y-axis labels
+r2_mapping <- F %>% distinct(Level, Unit, Unit_lab, Total_R2) %>% mutate(New_Unit_lab = sprintf('%s\n(R\u00b2=%.2f)', Unit_lab, Total_R2))
+PP <- PP %>% left_join(r2_mapping %>% select(Level, Unit_lab, New_Unit_lab), by = c('Level', 'Unit_lab'))
+PP$New_Unit_lab <- factor(PP$New_Unit_lab, levels = rev(unique(r2_mapping$New_Unit_lab)))
+
+pub_theme <- theme_classic(base_size = 12) + theme(
+  text = element_text(family = 'sans', colour = 'black'),
+  plot.title = element_text(face = 'bold', size = 14), 
+  axis.title = element_text(face = 'bold'), 
+  axis.text = element_text(colour = 'black'),
+  strip.text = element_text(face = 'bold', size = 11), 
+  strip.background = element_rect(fill = 'lightgrey', colour = 'black'),
+  legend.position = 'bottom', 
+  panel.border = element_rect(colour = 'black', fill = NA, linewidth = 0.6)
+)
+
+g <- ggplot(PP, aes(x = Interval, y = New_Unit_lab)) +
+  geom_tile(aes(fill = Value), colour = 'white', linewidth = 0.8) +
+  geom_tile(data = filter(PP, IsMax), fill = NA, colour = 'black', linewidth = 1.1) +
+  geom_text(aes(label = Txt), size = 3, lineheight = 0.85) +
+  facet_grid(Level ~ Panel, scales = 'free_y', space = 'free_y') +
+  scale_fill_gradient(low = 'white', high = '#3C5488', na.value = 'grey92', limits = c(0, 100), name = '% ') +
+  coord_cartesian(clip = 'off') +
+  labs(title = 'Critical Window Alignment: where tillers are produced vs. where yield is decided',
+       x = 'Phenological interval', y = NULL,
+       caption = 'Panel B cells: Shapley share (%) [bootstrap frequency of ranking first, 1,000 genotype-cluster resamples]. Black outline = row maximum.\nLocation and Global levels use within-environment standardisation.') +
+  pub_theme + theme(plot.margin = margin(10, 60, 10, 10), axis.text.x = element_text(size = 9), plot.caption = element_text(hjust = 0, size = 8))
+
+ggsave(file.path(output_dir, 'Fig_Critical_Window_Alignment.png'), g, width = 13, height = 7.5, dpi = 600)
+cat('\nDone. Outputs saved to working directory.\n')
+
+
