@@ -1,36 +1,36 @@
 # ==============================================================================
-# MASTER REPRODUCIBLE ANALYTICAL PIPELINE
+# MASTER REPRODUCIBLE ANALYTICAL PIPELINE for Multilocation GxE Experiment
 # ==============================================================================
 # Manuscript Title:
 #   Dissecting Vegetative Micro-Phenology and Thermal Plasticity in Spring Wheat 
 #   Across Contrasting Thermal Regimes
-# Target Journal: 
-#   Field Crops Research
-# Author: 
-#   Apoorva Ashu et al., Division of Genetics, ICAR-IARI, New Delhi, India
+# # Author: 
+#   Apoorva Ashu (PhD), Division of Plant Physiology, ICAR-IARI, New Delhi, India
+# Mail: apoorva_13125@iari.res.in
 # Repository:
 #   Wheat GxE Micro-Phenology and Chronic Vegetative Thermal Stress
 # ==============================================================================
 # DESCRIPTION & WORKFLOW OVERVIEW:
-# This script constitutes the authoritative, self-contained analytical pipeline 
-# supporting the entire manuscript. It reads directly from raw field trial sheets 
-# in 'Master_Data.xlsx' and meteorological sensor records in 'Weather_Master.xlsx'.
+# This script constitutes the authoritative, self-contained analytical pipeline
+# supporting the entire manuscript. It reads directly from raw field trial sheets
+# in 'Master_Data.xlsx', meteorological sensor records in 'Weather_Master.xlsx',
+# and the canonical plot/block mapping in 'GS population information.xlsx'.
 # It executes end-to-end:
-#   1. Package verification & centralized publication theme setup
-#   2. Environmental metadata standardization (NWPZ Baseline, NWPZ Warm, PZ Warm, PZ Acute)
-#   3. Meteorological characterization, thermal velocities & GDD modeling (Section 1)
-#   4. Intra-environment block adjustment & BLUE extraction via LME4 (Section 2.6.1)
-#   5. Core phenotypic trait derivations (AUTPC, Rates, TCE, TSI)
-#   6. Baseline phenotypic distributions & global parameter ANOVA (Section 2.1)
-#   7. Unsupervised phenology classification: K-Means trajectories & Peak Phase (Section 2.2)
-#   8. Micro-phenology index validation (AUTPC & TSI yield correlations) (Section 2.3)
-#   9. Non-linear thermal modeling via Generalized Additive Models (GAM) (Section 2.4)
-#  10. Categorical phenological strategies & multi-environment yield trade-offs (Section 2.5)
-#  11. Local/Global GxE variance partitioning, Heritability (H2) & Finlay-Wilkinson plasticity (Section 2.6)
-#  12. Multi-environment GGE biplots & WAASBY selection matrix (Section 2.7)
+#   0. Package verification, global biometric constants & publication theme setup
+#   1. Section 1   (Section_1_Weather_and_Treatments): Meteorological characterization, crown-soil buffering, GDD_std & NHU (Figure 1, Figure S1, Table 1, Tables S1-S2)
+#   2. Section 2.0 (Section_2_BLUE_Extraction): Non-destructive Delhi block mapping, field layout diagnostics & Stage-1 BLUE extraction (Stage-1 BLUE Audit Suite)
+#   3. Section 2.1 (Section_2.1_Phenotypic_Distributions): Multi-environment phenotypic distributions & repeated-measures LMM ANOVA (Figure 2, Table 2, Table S3)
+#   4. Section 2.2 (Section_2.2_Phenology_Classifications): Unsupervised K-Means vigor/trajectory classifications & McNemar regime transitions (Figure 3, Table 3, Tables S4-S5)
+#   5. Section 2.3 (Section_2.3_Phenology_Indices): Micro-phenology architecture (AUTPC_norm & Tiller Survival Index [TSI]) & cross-regime validation (Figure 4, Table 4, Tables S6-S7)
+#   6. Section 2.4 (Section_2.4_Thermal_Modeling): Non-linear thermal & chronological tillering trajectories via REML-GAM (Figure 5, Figure S2, Table 5, Tables S8-S10)
+#   7. Section 2.5 (Section_2.5_Categorical_Classifications): Three-factor tillering strategy profiles, yield dynamics & rank stability (Figure 6, Figure S3, Table 6, Table S11)
+#   8. Section 2.6 (Section_2.6_Phenotypic_Plasticity): Finlay-Wilkinson linear & BLUP reaction norms and LOEO stability diagnostics (Figure 7, Figures S4-S5, Tables S12-S14)
+#   9. Section 2.7 (Section_2.7_Variance_and_Heritability): Multi-tier variance partitioning & Cullis/Piepho broad-sense heritability H2 (Table 7, Table S15)
+#  10. Section 2.8 (Section_2.8_GGE_Stability): Multi-environment GGE biplots, zone-specific adaptation & unified ideotype selection (Figure 8, Figure S6, Table 8, Table S16)
+#  11. Section 10  (GWAS_Datasheets): Complete 4-environment Stage-1 BLUE & cross-environment plasticity/stability GWAS phenotype datasheets ordered strictly by canonical Plot_ID (Genotype 1 to 200)
 #
-# All publication-grade figures (300-600 DPI) and structured data CSVs are
-# exported into their corresponding folders within 'Final_Manuscript_Assets/'.
+# All publication-grade figures (600 DPI), structured CSVs, and multi-sheet Excel
+# workbooks are exported into 'Final_Manuscript_Assets/' and 'GWAS_Datasheets/'.
 # ==============================================================================
 
 # ==============================================================================
@@ -67,12 +67,22 @@ invisible(lapply(required_packages, library, character.only = TRUE))
 set.seed(42)
 
 # Centralized Biometric & Unit Constants (Single Source of Truth Across Sections)
+# Note on Yield Units: GrainYld is analysed in harvested plot units (kg/plot; 0.675 m^2 net harvested area).
+# Tiller counts (T1..T4, PT) represent per-plant averages from 5 randomly sampled plants per plot.
 PLOT_HARVESTED_AREA_M2  <- 0.675
-CONVERSION_PLOT_TO_M2   <- 1.0
 YIELD_UNIT_LABEL        <- "kg/plot"
 COUNT_AT_EMERGENCE_MAIN <- 1.0
 COUNT_AT_EMERGENCE_ALT  <- 0.0
 DELHI_PRIMARY_MODEL     <- "A"
+
+# Centralized Vigor Typology Labels (Option A: Mean Tillering Rate Clustering)
+VIGOR_HI <- "High Tillering Vigor"
+VIGOR_LO <- "Low Tillering Vigor"
+
+# Centralized Input Data File Paths (Self-Contained Repository Paths)
+data_file_path <- file.path(project_root, "Master_Data.xlsx")
+gs_map_path    <- file.path(project_root, "GS population information.xlsx")
+dhw_orig_path  <- file.path(project_root, "Data_Dharwad.xlsx")
 
 # Global Standardized Publication Theme (Nature/Field Crops Research Standard)
 pub_theme <- theme_classic(base_size = 12) +
@@ -93,6 +103,59 @@ format_p_stat <- function(p_val) {
   sprintf("p = %s %s", p_num, stars)
 }
 
+format_p_display <- function(p) {
+  if (is.na(p)) return("N/A")
+  if (p < 0.001) sprintf("%.2e ***", p)
+  else if (p < 0.01) sprintf("%.4f **", p)
+  else if (p < 0.05) sprintf("%.4f *", p)
+  else sprintf("%.4f (ns)", p)
+}
+
+# Universal ASCII & Excel-Safe Table Sanitizer (Prevents Windows-1252 Mojibake & #NAME? Formula Errors)
+sanitize_text_vec <- function(v) {
+  if (!is.character(v) && !is.factor(v)) return(v)
+  was_factor <- is.factor(v)
+  s <- as.character(v)
+  s <- gsub("r\u0304", "mean_r", s, fixed = TRUE)
+  s <- gsub("\u03c7\u00b2", "Chi-sq", s, fixed = TRUE)
+  s <- gsub("\u0394", "Delta ", s, fixed = TRUE)
+  s <- gsub("Delta  ", "Delta ", s, fixed = TRUE)
+  s <- gsub("\u03c3\u00b2", "sigma2", s, fixed = TRUE)
+  s <- gsub("\u00b1", "+/-", s, fixed = TRUE)
+  s <- gsub("\u2013", "-", s, fixed = TRUE)
+  s <- gsub("\u2014", "--", s, fixed = TRUE)
+  s <- gsub("\u2212", "-", s, fixed = TRUE)
+  s <- gsub("\u2192", "->", s, fixed = TRUE)
+  s <- gsub("\u2265", ">=", s, fixed = TRUE)
+  s <- gsub("\u2264", "<=", s, fixed = TRUE)
+  s <- gsub("\u00d7", "x", s, fixed = TRUE)
+  s <- gsub("\u00b0C\u00b7d", "deg C d", s, fixed = TRUE)
+  s <- gsub("\u00b0C", "deg C", s, fixed = TRUE)
+  s <- gsub("\u00b0", "deg ", s, fixed = TRUE)
+  s <- gsub("\u00b7", ".", s, fixed = TRUE)
+  s <- gsub("\u00b2", "2", s, fixed = TRUE)
+  # Prevent Excel from parsing composite strings starting with + or - as broken formulas (#NAME?)
+  is_composite_signed <- !is.na(s) & grepl("^[+-][0-9].*[^0-9.eE+-]", s)
+  s[is_composite_signed] <- paste0("Delta: ", s[is_composite_signed])
+  if (was_factor) factor(s, levels = unique(s)) else s
+}
+
+sanitize_df_for_export <- function(df) {
+  if (!is.data.frame(df)) return(df)
+  names(df) <- sanitize_text_vec(names(df))
+  for (col_i in seq_along(df)) {
+    if (is.character(df[[col_i]]) || is.factor(df[[col_i]])) {
+      df[[col_i]] <- sanitize_text_vec(df[[col_i]])
+    }
+  }
+  df
+}
+
+write.csv <- function(x, file = "", row.names = FALSE, ...) {
+  x_clean <- sanitize_df_for_export(x)
+  utils::write.csv(x_clean, file = file, row.names = row.names, fileEncoding = "UTF-8", ...)
+}
+
 # Output Root Directory
 assets_dir <- file.path(project_root, "Final_Manuscript_Assets")
 dir.create(assets_dir, showWarnings = FALSE, recursive = TRUE)
@@ -106,8 +169,14 @@ if (requireNamespace("openxlsx", quietly = TRUE)) {
 }
 
 # ==============================================================================
-# MODULAR EXECUTION CONTROL FLAGS
-# Modular execution control flags (defaults to full execution unless overridden by caller)
+# MODULAR EXECUTION CONTROL FLAGS & DEPENDENCY MAP
+# ==============================================================================
+# Dependency Map:
+#   - Section 2 (BLUEs & Master Raw): Required by Sections 3, 4, 5, 6, 7, 8, 9
+#     (Even if RUN_SECTION_2_BLUES = FALSE, the cache loader reconstructs blues_df & master_raw)
+#   - Section 4 (Phenology Typology): Required by Sections 5, 7, 8, 9 (populates Trajectory & Vigor on blues_df)
+#   - Section 5 (Microphenology & TSI): Required by Sections 7, 8, 9 (populates tsi_df & TSI columns on blues_df)
+#   - Section 7 (Categorical Architecture): Required by Section 8 (creates master_profiles for Table S13 cross-tab)
 if (!exists("CLEAR_BLUE_CACHE"))             CLEAR_BLUE_CACHE             <- FALSE
 if (!exists("RUN_SECTION_1_WEATHER"))        RUN_SECTION_1_WEATHER        <- TRUE
 if (!exists("RUN_SECTION_2_BLUES"))          RUN_SECTION_2_BLUES          <- TRUE
@@ -118,6 +187,7 @@ if (!exists("RUN_SECTION_6_THERMAL_GAM"))    RUN_SECTION_6_THERMAL_GAM    <- TRU
 if (!exists("RUN_SECTION_7_CATEGORICAL"))    RUN_SECTION_7_CATEGORICAL    <- TRUE
 if (!exists("RUN_SECTION_8_PLASTICITY"))     RUN_SECTION_8_PLASTICITY     <- TRUE
 if (!exists("RUN_SECTION_9_GGE_STABILITY"))  RUN_SECTION_9_GGE_STABILITY  <- TRUE
+if (!exists("RUN_SECTION_10_GWAS_EXPORT"))   RUN_SECTION_10_GWAS_EXPORT   <- TRUE
 
 
 # ==============================================================================
@@ -126,10 +196,10 @@ if (!exists("RUN_SECTION_9_GGE_STABILITY"))  RUN_SECTION_9_GGE_STABILITY  <- TRU
 # Verified against field records
 master_pheno_spec <- data.frame(
   Sheet       = c("Delhi_S2", "Delhi_S1", "Dharwad_S1", "Dharwad_S2"),
-  Env_Name    = c("NWPZ Baseline", "NWPZ Warm", "PZ Warm", "PZ Acute"),
+  Env_Name    = c("NWPZ Baseline", "NWPZ Warm", "PZ Warm I", "PZ Warm II"),
   Location    = c("Delhi", "Delhi", "Dharwad", "Dharwad"),
   Sowing      = c("S2", "S1", "S1", "S2"),
-  Role        = c("Optimal Baseline", "Early Heat Stress", "Continuous Warm", "Acute Heat Stress"),
+  Role        = c("Optimal Baseline", "Early Heat Stress", "PZ Warm Sowing I", "PZ Warm Sowing II"),
   Sowing_Date = as.Date(c("2025-11-21", "2025-11-03", "2025-11-10", "2025-11-20")),
   E           = c(13, 9, 5, 7),
   T1          = c(40, 35, 15, 19),
@@ -187,12 +257,14 @@ for (i in 1:nrow(master_pheno_spec)) {
   )
 }
 
-# Calculate daily mean temperatures and GDD accumulation (uncapped and capped at daily Tmax)
+# Calculate daily mean temperatures and GDD accumulation (uncapped, nocturnal Tmin-only, and capped at daily Tmax)
 weather <- weather %>% 
   mutate(
     Tmean              = (Tmax + Tmin) / 2, 
     Daily_GDD_Uncapped = pmax(0, Tmean - base_temp),
     Daily_GDD          = Daily_GDD_Uncapped,
+    Daily_GDD_Tmin     = pmax(0, Tmin - base_temp),
+    Daily_GDD_Tmax     = pmax(0, Tmax - base_temp),
     Tmax_Capped        = pmin(Tmax, tmax_cap),
     Tmean_Capped       = (Tmax_Capped + Tmin) / 2,
     Daily_GDD_Capped   = pmax(0, Tmean_Capped - base_temp),
@@ -242,6 +314,8 @@ calc_stage_weather <- function() {
         Tmax             = mean(sub_st$Tmax, na.rm = TRUE),
         Tmin             = mean(sub_st$Tmin, na.rm = TRUE),
         Stage_GDD        = sum(sub_st$Daily_GDD_Uncapped, na.rm = TRUE),
+        Stage_GDD_Tmin   = sum(sub_st$Daily_GDD_Tmin, na.rm = TRUE),
+        Stage_GDD_Tmax   = sum(sub_st$Daily_GDD_Tmax, na.rm = TRUE),
         Stage_GDD_Capped = sum(sub_st$Daily_GDD_Capped, na.rm = TRUE),
         Stage_GDD_Cap32  = sum(sub_st$Daily_GDD_Cap32, na.rm = TRUE),
         stringsAsFactors = FALSE
@@ -253,27 +327,29 @@ calc_stage_weather <- function() {
 
 stage_summary <- calc_stage_weather()
 
-# Stage-by-Environment Cumulative GDD from Emergence (Uncapped vs Capped)
+# Stage-by-Environment Cumulative GDD from Emergence (Uncapped, Nocturnal Tmin, and Capped)
 gdd_from_emergence_table <- stage_summary %>%
   group_by(Environment) %>%
   mutate(
     Cum_GDD_Uncapped = cumsum(Stage_GDD),
+    Cum_GDD_Tmin     = cumsum(Stage_GDD_Tmin),
     Cum_GDD_Capped   = cumsum(Stage_GDD_Capped)
   ) %>%
   ungroup() %>%
-  select(Environment, Stage, Duration_Days, Stage_GDD_Uncapped = Stage_GDD, Stage_GDD_Capped, Cum_GDD_Uncapped, Cum_GDD_Capped)
+  select(Environment, Stage, Duration_Days, Stage_GDD_Uncapped = Stage_GDD, Stage_GDD_Tmin, Stage_GDD_Capped, Cum_GDD_Uncapped, Cum_GDD_Tmin, Cum_GDD_Capped)
 
 if (isTRUE(RUN_SECTION_1_WEATHER)) {
-  # Total Uncapped Vegetative GDD from Emergence to T4 Milestone Across Environments
+  # Total Uncapped & Nocturnal Vegetative GDD from Emergence to T4 Milestone Across Environments
   total_gdd_env_sec1 <- gdd_from_emergence_table %>%
     filter(Stage == "T3-T4") %>%
     transmute(
       Environment,
-      Total_GDD_Uncapped = Cum_GDD_Uncapped
+      Total_GDD_Uncapped = Cum_GDD_Uncapped,
+      Total_GDD_Tmin     = Cum_GDD_Tmin
     )
   spread_uncapped_sec1 <- (max(total_gdd_env_sec1$Total_GDD_Uncapped) - min(total_gdd_env_sec1$Total_GDD_Uncapped)) / min(total_gdd_env_sec1$Total_GDD_Uncapped) * 100
 
-  cat("\n--- Total Vegetative Thermal Accumulation (Emergence to T4 Milestone, Uncapped GDD) ---\n")
+  cat("\n--- Total Vegetative Thermal Accumulation (Emergence to T4 Milestone, Uncapped & Nocturnal GDD_Tmin) ---\n")
   print(total_gdd_env_sec1)
   cat(sprintf("Vegetative GDD Range (E to T4): %.1f to %.1f deg C d (Spread: %.2f%%)\n\n",
               min(total_gdd_env_sec1$Total_GDD_Uncapped), max(total_gdd_env_sec1$Total_GDD_Uncapped), spread_uncapped_sec1))
@@ -289,12 +365,18 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
     left_join(baseline_st, by = "Stage", suffix = c("_Target", "_Baseline")) %>%
     mutate(
       Delta_Days       = Duration_Days_Target - Duration_Days_Baseline,
+      Tmean            = Tmean_Target,
+      Tmax             = Tmax_Target,
+      Tmin             = Tmin_Target,
       Delta_Tmean      = Tmean_Target - Tmean_Baseline,
       Delta_Tmax       = Tmax_Target - Tmax_Baseline,
+      Delta_Tmin       = Tmin_Target - Tmin_Baseline,
       Delta_GDD        = Stage_GDD_Target - Stage_GDD_Baseline,
+      Delta_GDD_Tmin   = Stage_GDD_Tmin_Target - Stage_GDD_Tmin_Baseline,
       Delta_Pace_GDD_d = Pace_Target - Pace_Baseline
     ) %>%
-    select(Environment = Environment_Target, Stage, Delta_Days, Delta_Tmean, Delta_Tmax, Delta_GDD, Delta_Pace_GDD_d)
+    select(Environment = Environment_Target, Stage, Delta_Days, Tmean, Tmax, Tmin,
+           Delta_Tmean, Delta_Tmax, Delta_Tmin, Delta_GDD, Delta_GDD_Tmin, Delta_Pace_GDD_d)
 
   # 1.4 Clean Up & Archive Legacy/Redundant Section 1 Plots and CSVs
   weather_alt_dir <- file.path(project_root, "Curiosity_And_Iterations", "Weather_Alternative_Plots")
@@ -340,7 +422,7 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
     group_by(Environment) %>%
     arrange(DAS, .by_group = TRUE) %>%
     mutate(
-      Stage_Milestone = paste0("S", row_number()),
+      Stage_Milestone = paste0("T", row_number()),
       Soil_9am = `9am`,
       Soil_1pm = `1pm`,
       Soil_5pm = `5pm`,
@@ -388,6 +470,7 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
       Mean_Air_Tmin_C  = sum(Tmin * Duration_Days) / sum(Duration_Days),
       Mean_Air_Tmean_C = sum(Tmean * Duration_Days) / sum(Duration_Days),
       Cumulative_GDD_E_to_T4 = sum(Stage_GDD),
+      Cumulative_GDD_Tmin_E_to_T4 = sum(Stage_GDD_Tmin),
       Thermal_Pace_GDD_per_Day = sum(Stage_GDD) / sum(Duration_Days),
       .groups = "drop"
     )
@@ -413,6 +496,7 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
     mutate(
       Delta_Days_vs_Baseline       = Vegetative_Duration_E_to_T4_Days - base_row_t1$Vegetative_Duration_E_to_T4_Days,
       Delta_Air_Tmean_vs_Baseline  = round(Mean_Air_Tmean_C - base_row_t1$Mean_Air_Tmean_C, 2),
+      Delta_GDD_Tmin_vs_Baseline   = round(Cumulative_GDD_Tmin_E_to_T4 - base_row_t1$Cumulative_GDD_Tmin_E_to_T4, 1),
       Delta_Pace_GDD_d_vs_Baseline = round(Thermal_Pace_GDD_per_Day - base_row_t1$Thermal_Pace_GDD_per_Day, 2),
       Delta_Soil_09h_vs_Baseline   = round(Mean_Soil_9am - base_soil_t1$Mean_Soil_9am, 2),
       Delta_Soil_13h_vs_Baseline   = round(Mean_Soil_1pm - base_soil_t1$Mean_Soil_1pm, 2),
@@ -421,6 +505,7 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
       Mean_Air_Tmin_C              = round(Mean_Air_Tmin_C, 2),
       Mean_Air_Tmean_C             = round(Mean_Air_Tmean_C, 2),
       Cumulative_GDD_E_to_T4       = round(Cumulative_GDD_E_to_T4, 1),
+      Cumulative_GDD_Tmin_E_to_T4  = round(Cumulative_GDD_Tmin_E_to_T4, 1),
       Thermal_Pace_GDD_per_Day     = round(Thermal_Pace_GDD_per_Day, 2),
       Mean_Soil_09h_C              = round(Mean_Soil_9am, 2),
       Mean_Soil_13h_C              = round(Mean_Soil_1pm, 2),
@@ -433,7 +518,8 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
       Emergence_DAS, Max_Tillering_T4_DAS, Stem_Elongation_SE_DAS,
       Vegetative_Duration_E_to_T4_Days, Delta_Days_vs_Baseline,
       Mean_Air_Tmax_C, Mean_Air_Tmin_C, Mean_Air_Tmean_C, Delta_Air_Tmean_vs_Baseline,
-      Cumulative_GDD_E_to_T4, Thermal_Pace_GDD_per_Day, Delta_Pace_GDD_d_vs_Baseline,
+      Cumulative_GDD_E_to_T4, Cumulative_GDD_Tmin_E_to_T4, Delta_GDD_Tmin_vs_Baseline,
+      Thermal_Pace_GDD_per_Day, Delta_Pace_GDD_d_vs_Baseline,
       Mean_Soil_09h_C, Mean_Soil_13h_C, Max_Soil_13h_C, Mean_Soil_17h_C,
       Delta_Soil_09h_vs_Baseline, Delta_Soil_13h_vs_Baseline, Delta_Soil_17h_vs_Baseline,
       Crown_13h_minus_Air_Tmax_C
@@ -445,6 +531,7 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
     mutate(
       Cumulative_DAE           = cumsum(Duration_Days),
       Cumulative_GDD           = cumsum(Stage_GDD),
+      Cumulative_GDD_Tmin      = cumsum(Stage_GDD_Tmin),
       Thermal_Pace_GDD_per_Day = Stage_GDD / Duration_Days
     ) %>%
     ungroup() %>%
@@ -452,33 +539,39 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
       baseline_st %>%
         transmute(
           Stage,
-          Base_Days  = Duration_Days,
-          Base_Tmean = Tmean,
-          Base_Tmax  = Tmax,
-          Base_GDD   = Stage_GDD,
-          Base_Pace  = Pace_Baseline
+          Base_Days     = Duration_Days,
+          Base_Tmean    = Tmean,
+          Base_Tmax     = Tmax,
+          Base_Tmin     = Tmin,
+          Base_GDD      = Stage_GDD,
+          Base_GDD_Tmin = Stage_GDD_Tmin,
+          Base_Pace     = Pace_Baseline
         ),
       by = "Stage"
     ) %>%
     mutate(
-      Delta_Days_vs_Baseline       = Duration_Days - Base_Days,
-      Delta_Tmean_vs_Baseline_C    = round(Tmean - Base_Tmean, 2),
-      Delta_Tmax_vs_Baseline_C     = round(Tmax - Base_Tmax, 2),
-      Delta_Stage_GDD_vs_Baseline  = round(Stage_GDD - Base_GDD, 1),
-      Delta_Pace_GDD_d_vs_Baseline = round(Thermal_Pace_GDD_per_Day - Base_Pace, 2),
-      Mean_Tmean_C                 = round(Tmean, 2),
-      Mean_Tmax_C                  = round(Tmax, 2),
-      Mean_Tmin_C                  = round(Tmin, 2),
-      Stage_GDD                    = round(Stage_GDD, 1),
-      Cumulative_GDD               = round(Cumulative_GDD, 1),
-      Thermal_Pace_GDD_per_Day     = round(Thermal_Pace_GDD_per_Day, 2)
+      Delta_Days_vs_Baseline           = Duration_Days - Base_Days,
+      Delta_Tmean_vs_Baseline_C        = round(Tmean - Base_Tmean, 2),
+      Delta_Tmax_vs_Baseline_C         = round(Tmax - Base_Tmax, 2),
+      Delta_Tmin_vs_Baseline_C         = round(Tmin - Base_Tmin, 2),
+      Delta_Stage_GDD_vs_Baseline      = round(Stage_GDD - Base_GDD, 1),
+      Delta_Stage_GDD_Tmin_vs_Baseline = round(Stage_GDD_Tmin - Base_GDD_Tmin, 1),
+      Delta_Pace_GDD_d_vs_Baseline     = round(Thermal_Pace_GDD_per_Day - Base_Pace, 2),
+      Mean_Tmean_C                     = round(Tmean, 2),
+      Mean_Tmax_C                      = round(Tmax, 2),
+      Mean_Tmin_C                      = round(Tmin, 2),
+      Stage_GDD                        = round(Stage_GDD, 1),
+      Stage_GDD_Tmin                   = round(Stage_GDD_Tmin, 1),
+      Cumulative_GDD                   = round(Cumulative_GDD, 1),
+      Cumulative_GDD_Tmin              = round(Cumulative_GDD_Tmin, 1),
+      Thermal_Pace_GDD_per_Day         = round(Thermal_Pace_GDD_per_Day, 2)
     ) %>%
     select(
       Environment, Stage, Duration_Days, Cumulative_DAE,
       Mean_Tmean_C, Mean_Tmax_C, Mean_Tmin_C,
-      Stage_GDD, Cumulative_GDD, Thermal_Pace_GDD_per_Day,
-      Delta_Days_vs_Baseline, Delta_Tmean_vs_Baseline_C, Delta_Tmax_vs_Baseline_C,
-      Delta_Stage_GDD_vs_Baseline, Delta_Pace_GDD_d_vs_Baseline
+      Stage_GDD, Stage_GDD_Tmin, Cumulative_GDD, Cumulative_GDD_Tmin, Thermal_Pace_GDD_per_Day,
+      Delta_Days_vs_Baseline, Delta_Tmean_vs_Baseline_C, Delta_Tmax_vs_Baseline_C, Delta_Tmin_vs_Baseline_C,
+      Delta_Stage_GDD_vs_Baseline, Delta_Stage_GDD_Tmin_vs_Baseline, Delta_Pace_GDD_d_vs_Baseline
     )
 
   # (3) Supplementary Table S2: Crown-Soil Diurnal Stage Observations (14 rows)
@@ -498,9 +591,9 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
       Soil_13h_minus_Air_Tmax_C = round(Soil_1pm_minus_Air_Tmax, 2)
     )
 
-  write.csv(table_1_main_regimes, file.path(sec1_dir, "Table_1_Vegetative_Thermal_and_Crown_Soil_Regimes.csv"), row.names = FALSE)
-  write.csv(table_s1_consolidated, file.path(sec1_dir, "Table_S1_Stage_Specific_Thermal_and_Disparity_Dynamics.csv"), row.names = FALSE)
-  write.csv(table_s2_crown_obs, file.path(sec1_dir, "Table_S2_Crown_Soil_Diurnal_Stage_Observations.csv"), row.names = FALSE)
+  write.csv(table_1_main_regimes, file.path(sec1_dir, "Table_1_Vegetative_Thermal_and_Crown_Soil_Regimes_v2.csv"), row.names = FALSE)
+  write.csv(table_s1_consolidated, file.path(sec1_dir, "Table_S1_Stage_Specific_Thermal_and_Disparity_Dynamics_v2.csv"), row.names = FALSE)
+  write.csv(table_s2_crown_obs, file.path(sec1_dir, "Table_S2_Crown_Soil_Diurnal_Stage_Observations_v2.csv"), row.names = FALSE)
 
   if (requireNamespace("openxlsx", quietly = TRUE)) {
     wb_sec1 <- openxlsx::createWorkbook()
@@ -516,7 +609,7 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
     openxlsx::writeData(wb_sec1, "Table_S2_Crown_Soil_Obs", table_s2_crown_obs, headerStyle = header_style)
     openxlsx::setColWidths(wb_sec1, "Table_S2_Crown_Soil_Obs", cols = 1:ncol(table_s2_crown_obs), widths = "auto")
 
-    openxlsx::saveWorkbook(wb_sec1, file.path(sec1_dir, "Section_1_Manuscript_and_Supplementary_Tables.xlsx"), overwrite = TRUE)
+    openxlsx::saveWorkbook(wb_sec1, file.path(sec1_dir, "Section_1_Manuscript_and_Supplementary_Tables_v2.xlsx"), overwrite = TRUE)
   }
 
   # 1.6 Rebuilt High-Legibility Integrated Thermo-Phenology Figure (V4_Integrated_ThermoPhenology_Revised.png)
@@ -567,7 +660,17 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
     ) %>%
     ungroup()
 
-  # Long-format diurnal soil + air lines for unified legend
+  # Long-format diurnal soil + air lines (raw daily + LOESS trend) for unified legend
+  air_raw_long <- weather_das_df %>%
+    select(Env_Factor, DAS,
+           `Air Tmax (Daily Max)` = Tmax,
+           `Air Tmin (Daily Min)` = Tmin) %>%
+    pivot_longer(
+      cols = c(`Air Tmax (Daily Max)`, `Air Tmin (Daily Min)`),
+      names_to = "Series",
+      values_to = "Temp_C"
+    )
+
   air_lines_long <- weather_das_df %>%
     select(Env_Factor, DAS,
            `Air Tmax (Daily Max)` = Tmax_Smooth,
@@ -596,6 +699,7 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
     "Soil 17:00 h (Late Afternoon)",
     "Soil 09:00 h (Morning)"
   )
+  air_raw_long$Series    <- factor(air_raw_long$Series, levels = series_levels)
   air_lines_long$Series  <- factor(air_lines_long$Series, levels = series_levels)
   soil_lines_long$Series <- factor(soil_lines_long$Series, levels = series_levels)
 
@@ -608,11 +712,11 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
   )
 
   p_v4_thermo <- ggplot() +
-    # Unbroken Daily Air Thermal Envelope (smoothed Tmin-Tmax envelope matching the curves)
+    # Unbroken Daily Air Thermal Envelope (raw daily Tmin-Tmax envelope)
     geom_ribbon(
       data = weather_das_df,
-      aes(x = DAS, ymin = Tmin_Smooth, ymax = Tmax_Smooth),
-      fill = "#D5D8DC", alpha = 0.65
+      aes(x = DAS, ymin = Tmin, ymax = Tmax),
+      fill = "#D5D8DC", alpha = 0.45
     ) +
     # Vertical Phenological Stage Milestones (E, T1, T2, T3, T4, SE)
     geom_vline(
@@ -620,11 +724,17 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
       aes(xintercept = DAS),
       linetype = "dotted", color = "grey30", linewidth = 0.65
     ) +
-    # Smoothed Daily Air Tmax & Tmin Curves
+    # Raw Daily Air Tmax & Tmin Traces (thin semi-transparent lines showing daily spikes)
+    geom_line(
+      data = air_raw_long,
+      aes(x = DAS, y = Temp_C, color = Series, group = Series),
+      linewidth = 0.45, alpha = 0.55, show.legend = FALSE
+    ) +
+    # LOESS-Smoothed Daily Air Tmax & Tmin Trend Curves
     geom_line(
       data = air_lines_long,
       aes(x = DAS, y = Temp_C, color = Series, group = Series),
-      linewidth = 1.20
+      linewidth = 1.15
     ) +
     # Vertical Diurnal Crown-Soil Range Bars at Each Sampling Date
     geom_segment(
@@ -693,280 +803,258 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
       y = "Temperature (°C)"
     )
 
-  ggsave(file.path(sec1_dir, "V4_Integrated_ThermoPhenology_Revised.png"),
-         plot = p_v4_thermo, width = 14, height = 9.5, dpi = 600)
-  ggsave(file.path(weather_alt_dir, "V5_Integrated_ThermoPhenology_Revised.png"),
+  ggsave(file.path(sec1_dir, "Figure_S1_Integrated_ThermoPhenology_v2.png"),
          plot = p_v4_thermo, width = 14, height = 9.5, dpi = 600)
 
-  # 1.7 Multi-Panel Temperature & Thermal Disparities Figure (Figure_Thermal_Disparities_and_Stage_Dynamics.png)
-  # Panel A: Stage-Specific Air Temperature Disparities Relative to NWPZ Baseline (Delta Tmean & Delta Tmax)
+  # ==============================================================================
+  # ==============================================================================
+  # 1.7 Multi-Panel Temperature & Thermal Disparities Figure (v2: Split Tmax/Tmin + Nighttime Heat Units)
+  # ==============================================================================
+  cum_gdd_summary <- bind_rows(
+    tibble(
+      Environment = env_metadata$Env_Name,
+      Milestone = "E",
+      Cumulative_DAE = 0,
+      Cum_GDD_Uncapped = 0,
+      Cum_GDD_Tmin = 0
+    ),
+    table_s1_consolidated %>%
+      mutate(Milestone = recode(Stage, "E-T1" = "T1", "T1-T2" = "T2", "T2-T3" = "T3", "T3-T4" = "T4")) %>%
+      select(Environment, Milestone, Cumulative_DAE, Cum_GDD_Uncapped = Cumulative_GDD, Cum_GDD_Tmin = Cumulative_GDD_Tmin)
+  )
+
   disp_plot_df <- disparities %>%
     mutate(
       Stage = factor(Stage, levels = c("E-T1", "T1-T2", "T2-T3", "T3-T4")),
-      Env_Factor = factor(Environment, levels = c("NWPZ Warm", "PZ Warm", "PZ Acute")),
-      Cell_Label = sprintf("ΔTmean: %+.1f°C\n(ΔTmax: %+.1f°C)", Delta_Tmean, Delta_Tmax)
+      Env_Factor = factor(Environment, levels = c("NWPZ Warm", "PZ Warm I", "PZ Warm II")),
+      Label_Tmax = sprintf("ΔTmax: %+.1f°C\n(Tmax: %.1f°C)", Delta_Tmax, Tmax),
+      Label_Tmin = sprintf("ΔTmin: %+.1f°C\n(Tmin: %.1f°C)", Delta_Tmin, Tmin)
     )
 
-  p_disp_air <- ggplot(disp_plot_df, aes(x = Stage, y = Env_Factor, fill = Delta_Tmean)) +
+  common_heat_theme <- pub_theme +
+    theme(
+      plot.title        = element_text(face = "bold", size = 12.8, hjust = 0, margin = margin(b = 2)),
+      plot.subtitle     = element_text(size = 9.8, color = "grey25", face = "italic", margin = margin(b = 5)),
+      axis.title        = element_text(face = "bold", size = 11.5, color = "black"),
+      axis.text         = element_text(size = 10.6, face = "bold", color = "black"),
+      legend.position   = "bottom",
+      legend.title      = element_text(face = "bold", size = 10.8),
+      legend.text       = element_text(size = 10.2, face = "bold"),
+      legend.margin     = margin(t = 2, b = 2),
+      plot.margin       = margin(6, 10, 4, 8)
+    )
+
+  heat_cbar <- guide_colorbar(
+    barwidth = unit(13.5, "cm"),
+    barheight = unit(0.46, "cm"),
+    title.position = "left",
+    title.vjust = 0.85,
+    frame.colour = "black",
+    ticks.colour = "black"
+  )
+
+  p_disp_tmax <- ggplot(disp_plot_df, aes(x = Stage, y = Env_Factor, fill = Delta_Tmax)) +
     geom_tile(color = "white", linewidth = 1.2) +
-    geom_text(
-      aes(label = Cell_Label),
-      color = ifelse(abs(disp_plot_df$Delta_Tmean) > 7.5, "white", "black"),
-      fontface = "bold", size = 3.8, lineheight = 1.05
-    ) +
-    scale_fill_gradient2(
-      low = "#2166AC", mid = "#F7F7F7", high = "#B2182B", midpoint = 0,
-      name = "Δ Air Tmean (°C vs Baseline):"
-    ) +
-    pub_theme +
-    theme(
-      plot.title = element_text(face = "bold", size = 13.5),
-      axis.text = element_text(size = 11, face = "bold", color = "black"),
-      legend.position = "bottom",
-      legend.title = element_text(face = "bold", size = 10.5)
-    ) +
-    labs(
-      title = "A. Stage-Specific Air Temperature Disparities Relative to NWPZ Baseline",
-      x = "Developmental Window",
-      y = "Stress Regime"
-    )
+    geom_text(aes(label = Label_Tmax), fontface = "bold", size = 3.90, lineheight = 1.05,
+              color = ifelse(abs(disp_plot_df$Delta_Tmax) > 5.0, "white", "black")) +
+    scale_fill_gradient2(low = "#3C5488", mid = "#F7F7F7", high = "#DC0000", midpoint = 0,
+                         limits = c(-5, 13), breaks = seq(-4, 12, by = 4),
+                         name = "Thermal Disparity vs. NWPZ Baseline (°C): ",
+                         guide = heat_cbar) +
+    scale_x_discrete(expand = c(0, 0)) + scale_y_discrete(expand = c(0, 0)) +
+    common_heat_theme +
+    labs(title = "A. Daytime Maximum Air Temp. (ΔTmax)",
+         subtitle = "Uniform daytime heat load across PZ Warm I & II (~28.0 °C)",
+         x = "Developmental Window", y = "Stress Regime")
 
-  # Panel B: Diurnal Crown-Soil Temperature Disparities Relative to NWPZ Baseline (09:00 h, 13:00 h, 17:00 h)
-  base_soil_means <- soil_env_summary %>% filter(Environment == "NWPZ Baseline")
-  soil_disp_df <- soil_env_summary %>%
-    filter(Environment != "NWPZ Baseline") %>%
-    transmute(
-      Environment,
-      `09:00 h (Morning)`        = Mean_Soil_9am - base_soil_means$Mean_Soil_9am,
-      `13:00 h (Afternoon Peak)` = Mean_Soil_1pm - base_soil_means$Mean_Soil_1pm,
-      `17:00 h (Late Afternoon)` = Mean_Soil_5pm - base_soil_means$Mean_Soil_5pm,
-      Raw_9am = Mean_Soil_9am,
-      Raw_1pm = Mean_Soil_1pm,
-      Raw_5pm = Mean_Soil_5pm
-    ) %>%
-    pivot_longer(
-      cols = c(`09:00 h (Morning)`, `13:00 h (Afternoon Peak)`, `17:00 h (Late Afternoon)`),
-      names_to = "Timestamp",
-      values_to = "Delta_Soil_C"
-    ) %>%
+  p_disp_tmin <- ggplot(disp_plot_df, aes(x = Stage, y = Env_Factor, fill = Delta_Tmin)) +
+    geom_tile(color = "white", linewidth = 1.2) +
+    geom_text(aes(label = Label_Tmin), fontface = "bold", size = 3.90, lineheight = 1.05,
+              color = ifelse(abs(disp_plot_df$Delta_Tmin) > 5.0, "white", "black")) +
+    scale_fill_gradient2(low = "#3C5488", mid = "#F7F7F7", high = "#DC0000", midpoint = 0,
+                         limits = c(-5, 13), breaks = seq(-4, 12, by = 4),
+                         name = "Thermal Disparity vs. NWPZ Baseline (°C): ",
+                         guide = heat_cbar) +
+    scale_x_discrete(expand = c(0, 0)) + scale_y_discrete(expand = c(0, 0)) +
+    common_heat_theme +
+    labs(title = "B. Nighttime Minimum Air Temp. (ΔTmin)",
+         subtitle = "Nocturnal surge at T2–T3 in PZ Warm I (+8.9 °C) vs. PZ Warm II (+4.0 °C)",
+         x = "Developmental Window", y = "")
+
+  soil_disp_df <- bind_rows(
+    table_1_main_regimes %>% filter(Environment != "NWPZ Baseline") %>%
+      transmute(Environment, Timestamp = "09:00 h\n(Morning)", Temp_C = Mean_Soil_09h_C, Delta_C = Delta_Soil_09h_vs_Baseline),
+    table_1_main_regimes %>% filter(Environment != "NWPZ Baseline") %>%
+      transmute(Environment, Timestamp = "13:00 h\n(Afternoon Peak)", Temp_C = Mean_Soil_13h_C, Delta_C = Delta_Soil_13h_vs_Baseline),
+    table_1_main_regimes %>% filter(Environment != "NWPZ Baseline") %>%
+      transmute(Environment, Timestamp = "17:00 h\n(Late Afternoon)", Temp_C = Mean_Soil_17h_C, Delta_C = Delta_Soil_17h_vs_Baseline)
+  ) %>%
     mutate(
-      Raw_Temp_C = case_when(
-        Timestamp == "09:00 h (Morning)"        ~ Raw_9am,
-        Timestamp == "13:00 h (Afternoon Peak)" ~ Raw_1pm,
-        Timestamp == "17:00 h (Late Afternoon)" ~ Raw_5pm
-      ),
-      Env_Factor = factor(Environment, levels = c("NWPZ Warm", "PZ Warm", "PZ Acute")),
-      Timestamp  = factor(Timestamp, levels = c("09:00 h (Morning)", "13:00 h (Afternoon Peak)", "17:00 h (Late Afternoon)")),
-      Bar_Label  = sprintf("%+.1f°C\n(%.1f°C)", Delta_Soil_C, Raw_Temp_C)
+      Timestamp = factor(Timestamp, levels = c("09:00 h\n(Morning)", "13:00 h\n(Afternoon Peak)", "17:00 h\n(Late Afternoon)")),
+      Env_Factor = factor(Environment, levels = c("NWPZ Warm", "PZ Warm I", "PZ Warm II")),
+      Label_Soil = sprintf("ΔSoil: %+.1f°C\n(%.1f°C)", Delta_C, Temp_C)
     )
 
-  p_disp_soil <- ggplot(soil_disp_df, aes(x = Env_Factor, y = Delta_Soil_C, fill = Timestamp)) +
-    geom_hline(yintercept = 0, linetype = "solid", color = "black", linewidth = 0.5) +
-    geom_col(position = position_dodge(width = 0.80), width = 0.72, color = "black", linewidth = 0.45, alpha = 0.92) +
-    geom_text(
-      aes(y = pmax(0, Delta_Soil_C) + 0.68, label = Bar_Label),
-      position = position_dodge(width = 0.80),
-      size = 3.2, fontface = "bold", lineheight = 0.92
-    ) +
-    scale_fill_manual(
-      values = c(
-        "09:00 h (Morning)"        = "#117A65",
-        "13:00 h (Afternoon Peak)" = "#D35400",
-        "17:00 h (Late Afternoon)" = "#7D3C98"
-      ),
-      name = "Crown Soil Timestamp:",
-      guide = guide_legend(nrow = 2, byrow = TRUE, title.position = "top", title.hjust = 0.5)
-    ) +
-    scale_y_continuous(limits = c(-0.4, 10.8), breaks = seq(0, 10, by = 2), expand = expansion(mult = c(0, 0.05))) +
-    pub_theme +
-    theme(
-      plot.title = element_text(face = "bold", size = 13.5),
-      axis.text = element_text(size = 11, face = "bold", color = "black"),
-      legend.position = "bottom",
-      legend.title = element_text(face = "bold", size = 10.5),
-      legend.text = element_text(size = 10, face = "bold")
-    ) +
-    labs(
-      title = "B. Diurnal Crown-Soil Temperature Disparities vs. NWPZ Baseline",
-      x = "Stress Regime",
-      y = "Δ Crown Soil Temperature (°C)"
-    )
+  p_disp_soil_heat <- ggplot(soil_disp_df, aes(x = Timestamp, y = Env_Factor, fill = Delta_C)) +
+    geom_tile(color = "white", linewidth = 1.2) +
+    geom_text(aes(label = Label_Soil), fontface = "bold", size = 3.90, lineheight = 1.05,
+              color = ifelse(abs(soil_disp_df$Delta_C) > 5.0, "white", "black")) +
+    scale_fill_gradient2(low = "#3C5488", mid = "#F7F7F7", high = "#DC0000", midpoint = 0,
+                         limits = c(-5, 13), breaks = seq(-4, 12, by = 4),
+                         name = "Thermal Disparity vs. NWPZ Baseline (°C): ",
+                         guide = heat_cbar) +
+    scale_x_discrete(expand = c(0, 0)) + scale_y_discrete(expand = c(0, 0)) +
+    common_heat_theme +
+    labs(title = "C. Diurnal Crown-Soil Disparities",
+         subtitle = "Root-crown thermal shifts (09:00, 13:00, 17:00 h) vs. Baseline",
+         x = "Diurnal Sampling Timestamp", y = "")
 
-  # Panel C: Continuous Thermo-Chronological Trajectory & Compression Plot Relative to NWPZ Baseline
-  # Plots Cumulative Uncapped Vegetative GDD from Emergence (Y) vs. Days After Emergence (DAE, X)
-  traj_origin <- data.frame(
-    Environment    = env_metadata$Env_Name,
-    Stage_Point    = "E",
-    Cumulative_DAE = 0,
-    Cumulative_GDD = 0,
-    Stage_GDD      = 0,
-    Duration_Days  = 0,
-    stringsAsFactors = FALSE
-  )
-
-  traj_milestones <- table_s1_consolidated %>%
-    transmute(
-      Environment,
-      Stage_Point    = sub("^.*-", "", Stage),
-      Cumulative_DAE = Cumulative_DAE,
-      Cumulative_GDD = Cumulative_GDD,
-      Stage_GDD      = Stage_GDD,
-      Duration_Days  = Duration_Days
-    )
-
-  traj_plot_df <- bind_rows(traj_origin, traj_milestones) %>%
+  gdd_traj_df <- cum_gdd_summary %>%
     mutate(
-      Env_Factor  = factor(Environment, levels = env_metadata$Env_Name),
-      Stage_Point = factor(Stage_Point, levels = c("E", "T1", "T2", "T3", "T4")),
-      Node_Label  = ifelse(Stage_Point == "E", "E (0d)",
-                           sprintf("%s (%dd, %.0f)", Stage_Point, Cumulative_DAE, Cumulative_GDD))
+      Milestone = factor(Milestone, levels = c("E", "T1", "T2", "T3", "T4")),
+      Env_Factor = factor(Environment, levels = env_metadata$Env_Name),
+      x_num = as.numeric(Milestone)
     )
 
-  # Dynamic callout coordinates from computed tables
-  gdd_min_t4  <- min(total_gdd_env_sec1$Total_GDD_Uncapped)
-  gdd_max_t4  <- max(total_gdd_env_sec1$Total_GDD_Uncapped)
-  nwpz_b_t2   <- traj_milestones %>% filter(Environment == "NWPZ Baseline", Stage_Point == "T2")
-  nwpz_w_t2   <- traj_milestones %>% filter(Environment == "NWPZ Warm", Stage_Point == "T2")
-  delta_t2_w  <- nwpz_w_t2$Cumulative_GDD - nwpz_b_t2$Cumulative_GDD
-  pz_w_t4     <- traj_milestones %>% filter(Environment == "PZ Warm", Stage_Point == "T4")
-  pz_a_t4     <- traj_milestones %>% filter(Environment == "PZ Acute", Stage_Point == "T4")
-  nwpz_b_t4   <- traj_milestones %>% filter(Environment == "NWPZ Baseline", Stage_Point == "T4")
-  nwpz_w_t4   <- traj_milestones %>% filter(Environment == "NWPZ Warm", Stage_Point == "T4")
-
-  env_legend_labels <- setNames(
-    sprintf("%s (%.0f °C·d in %d d | %.1f GDD/d)",
-            table_1_main_regimes$Environment,
-            table_1_main_regimes$Cumulative_GDD_E_to_T4,
-            table_1_main_regimes$Vegetative_Duration_E_to_T4_Days,
-            table_1_main_regimes$Thermal_Pace_GDD_per_Day),
-    table_1_main_regimes$Environment
-  )
-
-  # Non-overlapping label coordinates in (DAE, GDD) space with leader segments
-  traj_labels_df <- traj_plot_df %>%
-    filter(Stage_Point != "E") %>%
+  t4_end_df <- gdd_traj_df %>%
+    filter(Milestone == "T4") %>%
     mutate(
-      label_x = case_when(
-        Environment == "PZ Warm"       & Stage_Point == "T1" ~  5.2,
-        Environment == "PZ Warm"       & Stage_Point == "T2" ~ 14.2,
-        Environment == "PZ Warm"       & Stage_Point == "T3" ~ 23.8,
-        Environment == "PZ Warm"       & Stage_Point == "T4" ~ 33.2,
-        Environment == "PZ Acute"      & Stage_Point == "T1" ~ 16.5,
-        Environment == "PZ Acute"      & Stage_Point == "T2" ~ 26.8,
-        Environment == "PZ Acute"      & Stage_Point == "T3" ~ 36.8,
-        Environment == "PZ Acute"      & Stage_Point == "T4" ~ 46.8,
-        Environment == "NWPZ Warm"     & Stage_Point == "T1" ~ 26.2,
-        Environment == "NWPZ Warm"     & Stage_Point == "T2" ~ 38.8,
-        Environment == "NWPZ Warm"     & Stage_Point == "T3" ~ 53.5,
-        Environment == "NWPZ Warm"     & Stage_Point == "T4" ~ 65.5,
-        Environment == "NWPZ Baseline" & Stage_Point == "T1" ~ 29.2,
-        Environment == "NWPZ Baseline" & Stage_Point == "T2" ~ 43.8,
-        Environment == "NWPZ Baseline" & Stage_Point == "T3" ~ 59.5,
-        Environment == "NWPZ Baseline" & Stage_Point == "T4" ~ 71.5,
-        TRUE ~ Cumulative_DAE
+      End_Label_GDD = sprintf("%s (%dd, %.0f °C·d)", Environment, Cumulative_DAE, Cum_GDD_Uncapped),
+      End_Label_NHU = sprintf("%.1f °C·d", Cum_GDD_Tmin),
+      x_nudge_gdd = case_when(
+        Environment == "PZ Warm I"     ~ Cumulative_DAE - 1.5,
+        Environment == "PZ Warm II"    ~ Cumulative_DAE + 1.5,
+        Environment == "NWPZ Warm"     ~ Cumulative_DAE - 1.0,
+        Environment == "NWPZ Baseline" ~ Cumulative_DAE + 0.5
       ),
-      label_y = case_when(
-        Environment == "PZ Warm"       & Stage_Point == "T1" ~ 192,
-        Environment == "PZ Warm"       & Stage_Point == "T2" ~ 372,
-        Environment == "PZ Warm"       & Stage_Point == "T3" ~ 535,
-        Environment == "PZ Warm"       & Stage_Point == "T4" ~ 668,
-        Environment == "PZ Acute"      & Stage_Point == "T1" ~ 182,
-        Environment == "PZ Acute"      & Stage_Point == "T2" ~ 384,
-        Environment == "PZ Acute"      & Stage_Point == "T3" ~ 526,
-        Environment == "PZ Acute"      & Stage_Point == "T4" ~ 622,
-        Environment == "NWPZ Warm"     & Stage_Point == "T1" ~ 338,
-        Environment == "NWPZ Warm"     & Stage_Point == "T2" ~ 478,
-        Environment == "NWPZ Warm"     & Stage_Point == "T3" ~ 604,
-        Environment == "NWPZ Warm"     & Stage_Point == "T4" ~ 692,
-        Environment == "NWPZ Baseline" & Stage_Point == "T1" ~ 232,
-        Environment == "NWPZ Baseline" & Stage_Point == "T2" ~ 326,
-        Environment == "NWPZ Baseline" & Stage_Point == "T3" ~ 452,
-        Environment == "NWPZ Baseline" & Stage_Point == "T4" ~ 616,
-        TRUE ~ Cumulative_GDD
+      y_nudge_gdd = case_when(
+        Environment == "PZ Warm I"     ~ Cum_GDD_Uncapped + 35,
+        Environment == "PZ Warm II"    ~ Cum_GDD_Uncapped - 35,
+        Environment == "NWPZ Warm"     ~ Cum_GDD_Uncapped + 32,
+        Environment == "NWPZ Baseline" ~ Cum_GDD_Uncapped - 32
+      ),
+      y_nudge_nhu = case_when(
+        Environment == "PZ Warm I"     ~ Cum_GDD_Tmin + 18,
+        Environment == "PZ Warm II"    ~ Cum_GDD_Tmin - 18,
+        Environment == "NWPZ Baseline" ~ Cum_GDD_Tmin + 16,
+        Environment == "NWPZ Warm"     ~ Cum_GDD_Tmin - 16
       )
     )
 
-  p_disp_gdd <- ggplot(traj_plot_df, aes(x = Cumulative_DAE, y = Cumulative_GDD, color = Env_Factor, group = Env_Factor)) +
-    # Conserved T4 Cumulative Thermal Requirement Band (644 - 682 GDD)
-    annotate("rect", xmin = 0, xmax = 76, ymin = gdd_min_t4 - 6, ymax = gdd_max_t4 + 6,
-             fill = "#EBEDEF", alpha = 0.80) +
-    geom_hline(yintercept = c(gdd_min_t4, gdd_max_t4), linetype = "dotted", color = "grey45", linewidth = 0.5) +
-    annotate("text", x = 1.0, y = (gdd_min_t4 + gdd_max_t4) / 2,
-             label = sprintf("Conserved T4 Thermal Target Band: %.0f–%.0f °C·days (Spread: %.1f%%)",
-                             gdd_min_t4, gdd_max_t4, spread_uncapped_sec1),
-             hjust = 0, vjust = 0.5, size = 3.3, fontface = "bold.italic", color = "grey25") +
-    # Horizontal Compression Bracket ABOVE the T4 Band between PZ (40 DAE) and NWPZ Baseline (72 DAE)
-    annotate("segment", x = pz_w_t4$Cumulative_DAE, xend = nwpz_b_t4$Cumulative_DAE,
-             y = 732, yend = 732, color = "#1B2631", linewidth = 0.85,
-             arrow = arrow(ends = "both", length = unit(0.18, "cm"), type = "closed")) +
-    annotate("label", x = (pz_w_t4$Cumulative_DAE + nwpz_b_t4$Cumulative_DAE) / 2, y = 732,
-             label = sprintf("Inter-Zone Tropical Calendar Compression: -%d to -%d Days (-43%% Window) vs. NWPZ Baseline",
-                             nwpz_b_t4$Cumulative_DAE - pz_a_t4$Cumulative_DAE,
-                             nwpz_b_t4$Cumulative_DAE - pz_w_t4$Cumulative_DAE),
-             size = 3.2, fontface = "bold", fill = "#FEF9E7", color = "#1B2631", label.size = 0.3) +
-    # Intra-Zone Early-Sowing Surge Callout at T2 (NWPZ Warm vs NWPZ Baseline)
-    annotate("segment", x = nwpz_w_t2$Cumulative_DAE, xend = nwpz_b_t2$Cumulative_DAE,
-             y = nwpz_b_t2$Cumulative_GDD + 8, yend = nwpz_w_t2$Cumulative_GDD - 8,
-             color = "#00A087", linewidth = 0.85, linetype = "dashed",
-             arrow = arrow(ends = "both", length = unit(0.15, "cm"))) +
-    annotate("segment", x = 41.5, xend = 47.5, y = 412, yend = 268,
-             color = "#0E6251", linewidth = 0.45, linetype = "dotted") +
-    annotate("label", x = 51.5, y = 240,
-             label = sprintf("Intra-NWPZ Early-Sowing Surge at T2:\n%+.1f °C·d (%.0f vs. %.0f GDD at ~41 DAE)",
-                             delta_t2_w, nwpz_w_t2$Cumulative_GDD, nwpz_b_t2$Cumulative_GDD),
-             size = 3.0, fontface = "bold", fill = "#E8F8F5", color = "#0E6251", label.size = 0.25) +
-    # Leader lines from milestone points to badges
-    geom_segment(
-      data = traj_labels_df,
-      aes(x = Cumulative_DAE, y = Cumulative_GDD, xend = label_x, yend = label_y, color = Env_Factor),
-      linewidth = 0.35, alpha = 0.65, show.legend = FALSE
-    ) +
-    # Connected Stage-to-Stage Trajectories (Slope = Daily Thermal Pace, GDD/day)
-    geom_line(aes(linetype = Env_Factor), linewidth = 1.35, alpha = 0.95) +
-    geom_point(size = 3.5, stroke = 0.9, shape = 21, fill = "white") +
-    geom_point(size = 2.3) +
-    # Milestone Labels (Stage [DAE d, Cum GDD])
-    geom_label(
-      data = traj_labels_df,
-      aes(x = label_x, y = label_y, label = Node_Label, color = Env_Factor),
-      size = 2.85, fontface = "bold", fill = "white", alpha = 0.95,
-      label.padding = unit(0.12, "lines"), label.size = 0.25, show.legend = FALSE
-    ) +
-    scale_color_npg(name = "Regime (Total E-T4 GDD | Duration | Mean Pace):", labels = env_legend_labels) +
-    scale_linetype_manual(
-      values = c("NWPZ Baseline" = "solid", "NWPZ Warm" = "longdash", "PZ Warm" = "solid", "PZ Acute" = "twodash"),
-      name = "Regime (Total E-T4 GDD | Duration | Mean Pace):",
-      labels = env_legend_labels
-    ) +
-    scale_x_continuous(limits = c(0, 77), breaks = seq(0, 75, by = 10), expand = expansion(mult = c(0.02, 0.03))) +
-    scale_y_continuous(limits = c(0, 765), breaks = seq(0, 700, by = 100), expand = expansion(mult = c(0.02, 0.03))) +
-    pub_theme +
-    theme(
-      plot.title = element_text(face = "bold", size = 13.5),
-      axis.text = element_text(size = 11, face = "bold", color = "black"),
-      legend.position = "bottom",
-      legend.title = element_text(face = "bold", size = 10.5),
-      legend.text = element_text(size = 10, face = "bold")
-    ) +
-    guides(
-      color    = guide_legend(nrow = 2, byrow = TRUE, override.aes = list(linewidth = 1.4, size = 3.2)),
-      linetype = guide_legend(nrow = 2, byrow = TRUE)
-    ) +
-    labs(
-      title = "C. Cumulative Vegetative Thermal Time (Uncapped GDD) vs. Calendar Duration (DAE) Relative to NWPZ Baseline",
-      x = "Chronological Duration from Emergence (Days After Emergence, DAE)",
-      y = "Cumulative Thermal Time (GDD, °C·days)"
+  # Dynamic annotation metrics computed directly from t4_end_df & table_s1_consolidated
+  gdd_min <- min(t4_end_df$Cum_GDD_Uncapped)
+  gdd_max <- max(t4_end_df$Cum_GDD_Uncapped)
+  gdd_spread_pct <- 100 * (gdd_max - gdd_min) / gdd_min
+  dae_base <- t4_end_df$Cumulative_DAE[t4_end_df$Environment == "NWPZ Baseline"]
+  dae_pz_min <- min(t4_end_df$Cumulative_DAE[t4_end_df$Environment %in% c("PZ Warm I", "PZ Warm II")])
+  dae_pz_max <- max(t4_end_df$Cumulative_DAE[t4_end_df$Environment %in% c("PZ Warm I", "PZ Warm II")])
+  gdd_pz1 <- t4_end_df$Cum_GDD_Uncapped[t4_end_df$Environment == "PZ Warm I"]
+  gdd_pz2 <- t4_end_df$Cum_GDD_Uncapped[t4_end_df$Environment == "PZ Warm II"]
+
+  panel_d_annot <- sprintf(
+    paste0("Scheduled Sampling Thermal Alignment (E–T4):\n",
+           "• Sampling milestones align at T4 within %.0f–%.0f °C·d (%.1f%% spread)\n",
+           "• Tropical PZ compresses calendar duration by %+d to %+d d (%.0f%%)\n",
+           "• Standard GDD_std masks divergence between PZ Warm I (%.1f) & II (%.1f)"),
+    gdd_min, gdd_max, gdd_spread_pct,
+    dae_pz_min - dae_base, dae_pz_max - dae_base,
+    100 * (mean(c(dae_pz_min, dae_pz_max)) - dae_base) / dae_base,
+    gdd_pz1, gdd_pz2
+  )
+
+  nhu_t12_pz1 <- table_s1_consolidated$Stage_GDD_Tmin[table_s1_consolidated$Environment == "PZ Warm I" & table_s1_consolidated$Stage == "T1-T2"]
+  nhu_t12_pz2 <- table_s1_consolidated$Stage_GDD_Tmin[table_s1_consolidated$Environment == "PZ Warm II" & table_s1_consolidated$Stage == "T1-T2"]
+  nhu_t23_pz1 <- table_s1_consolidated$Stage_GDD_Tmin[table_s1_consolidated$Environment == "PZ Warm I" & table_s1_consolidated$Stage == "T2-T3"]
+  nhu_t23_pz2 <- table_s1_consolidated$Stage_GDD_Tmin[table_s1_consolidated$Environment == "PZ Warm II" & table_s1_consolidated$Stage == "T2-T3"]
+  nhu_tot_pz1 <- t4_end_df$Cum_GDD_Tmin[t4_end_df$Environment == "PZ Warm I"]
+  nhu_tot_pz2 <- t4_end_df$Cum_GDD_Tmin[t4_end_df$Environment == "PZ Warm II"]
+
+  panel_e_annot <- sprintf(
+    paste0("PZ Warm I vs. PZ Warm II Nighttime Heat Surge (NHU):\n",
+           "• Stage T1–T2: %+.1f °C·d (%+.1f%%; %.1f vs. %.1f °C·d)\n",
+           "• Stage T2–T3: %+.1f °C·d (%+.1f%%; %.1f vs. %.1f °C·d)\n",
+           "• E–T4 Total: %+.1f °C·d (%.1f vs. %.1f °C·d)"),
+    nhu_t12_pz1 - nhu_t12_pz2, 100 * (nhu_t12_pz1 - nhu_t12_pz2) / nhu_t12_pz2, nhu_t12_pz1, nhu_t12_pz2,
+    nhu_t23_pz1 - nhu_t23_pz2, 100 * (nhu_t23_pz1 - nhu_t23_pz2) / nhu_t23_pz2, nhu_t23_pz1, nhu_t23_pz2,
+    nhu_tot_pz1 - nhu_tot_pz2, nhu_tot_pz1, nhu_tot_pz2
+  )
+
+  p_disp_gdd <- ggplot(gdd_traj_df, aes(x = Cumulative_DAE, y = Cum_GDD_Uncapped, color = Env_Factor, linetype = Env_Factor, group = Env_Factor)) +
+    annotate("rect", xmin = 0, xmax = 78, ymin = floor(gdd_min - 4), ymax = ceiling(gdd_max + 4), fill = "grey85", alpha = 0.45) +
+    geom_hline(yintercept = c(round(gdd_min), round(gdd_max)), linetype = "dotted", color = "grey45", linewidth = 0.55) +
+    geom_line(linewidth = 1.35) +
+    geom_point(size = 3.3, shape = 21, fill = "white", stroke = 1.2) +
+    geom_label(data = t4_end_df, aes(x = x_nudge_gdd, y = y_nudge_gdd, label = End_Label_GDD, color = Env_Factor),
+               size = 3.05, fontface = "bold", fill = "white", alpha = 0.94, label.size = 0.25, show.legend = FALSE) +
+    annotate("label", x = 3, y = 585, hjust = 0, vjust = 1, size = 3.05, fontface = "bold",
+             fill = "#F8F9F9", color = "grey15", label.size = 0.3,
+             label = panel_d_annot) +
+    scale_color_npg(name = "Thermal Regime:") +
+    scale_linetype_manual(values = c("NWPZ Baseline" = "solid", "NWPZ Warm" = "longdash", "PZ Warm I" = "solid", "PZ Warm II" = "twodash"), guide = "none") +
+    scale_x_continuous(breaks = seq(0, 75, by = 10), limits = c(0, 78)) +
+    scale_y_continuous(limits = c(0, 750), breaks = seq(0, 700, by = 100), expand = c(0, 0)) +
+    common_heat_theme +
+    labs(title = "D. Standard 24-h Cumulative Thermal Time (GDD_std) vs. Calendar Duration",
+         subtitle = "Standard GDD_std = Σ max(0, (Tmax + Tmin)/2 - 5.0°C) aligns at T4 sampling (~644–682 °C·d) across all 4 regimes",
+         x = "Chronological Duration from Emergence (Days After Emergence, DAE)",
+         y = "Cumulative Standard GDD_std (°C·days)")
+
+  p_disp_gdd_tmin <- ggplot(gdd_traj_df, aes(x = x_num, y = Cum_GDD_Tmin, color = Env_Factor, linetype = Env_Factor, group = Env_Factor)) +
+    annotate("rect", xmin = 2.0, xmax = 4.0, ymin = 0, ymax = 420, fill = "#DC0000", alpha = 0.07) +
+    annotate("text", x = 3.0, y = 402, label = "Active Tillering Window (T1–T3): Nocturnal Rd Divergence",
+             color = "#922B21", fontface = "bold.italic", size = 3.2) +
+    geom_line(linewidth = 1.35) +
+    geom_point(size = 3.3, shape = 21, fill = "white", stroke = 1.2) +
+    geom_label(data = t4_end_df, aes(x = 5.06, y = y_nudge_nhu, label = End_Label_NHU, color = Env_Factor),
+               hjust = 0, size = 3.05, fontface = "bold", fill = "white", alpha = 0.94, label.size = 0.25, show.legend = FALSE) +
+    annotate("label", x = 1.12, y = 378, hjust = 0, vjust = 1, size = 3.05, fontface = "bold",
+             fill = "#FDEDEC", color = "#922B21", label.size = 0.35,
+             label = panel_e_annot) +
+    annotate("segment", x = 4.0, xend = 4.0, y = 262.0, yend = 297.5,
+             colour = "#DC0000", linewidth = 0.9, arrow = arrow(ends = "both", length = unit(0.15, "cm"))) +
+    scale_color_npg(name = "Thermal Regime:") +
+    scale_linetype_manual(values = c("NWPZ Baseline" = "solid", "NWPZ Warm" = "longdash", "PZ Warm I" = "solid", "PZ Warm II" = "twodash"), guide = "none") +
+    scale_x_continuous(breaks = 1:5, labels = c("E\n(Emergence)", "T1\n(Init.)", "T2\n(Early)", "T3\n(Active)", "T4\n(Max Tiller)"), limits = c(0.9, 5.55)) +
+    scale_y_continuous(limits = c(0, 420), breaks = seq(0, 400, by = 100), expand = c(0, 0)) +
+    common_heat_theme +
+    labs(title = "E. Cumulative Nighttime Heat Units (NHU, Base 5.0 °C) Sensitivity",
+         subtitle = sprintf("NHU = Σ max(0, Tmin - 5.0°C) exposes %+.1f%% nighttime heat overload during T2–T3 in PZ Warm I", 100 * (nhu_t23_pz1 - nhu_t23_pz2) / nhu_t23_pz2),
+         x = "Developmental Milestone (Emergence to Max Vegetative Tillering)",
+         y = "Cumulative Nighttime Heat Units, NHU (°C·days)")
+
+  top_row <- (p_disp_tmax | p_disp_tmin | p_disp_soil_heat) +
+    plot_layout(widths = c(1, 1, 0.92), guides = "collect") &
+    theme(legend.position = "bottom", legend.margin = margin(t = 2, b = 2))
+
+  bottom_row <- (p_disp_gdd | p_disp_gdd_tmin) +
+    plot_layout(widths = c(1.08, 1.0), guides = "collect") &
+    theme(legend.position = "bottom", legend.title = element_text(face = "bold", size = 10.8), legend.text = element_text(face = "bold", size = 10.2))
+
+  fig_part1 <- top_row +
+    plot_annotation(
+      caption = "Panels A–C: Stage-specific daytime maximum air (ΔTmax), nighttime minimum air (ΔTmin), and diurnal crown-soil temperature disparities relative to NWPZ Baseline (shared diverging scale).",
+      theme = theme(plot.caption = element_text(size = 9.8, color = "grey25", face = "italic", hjust = 0, lineheight = 1.15, margin = margin(t = 2)))
+    )
+  ggsave(file.path(sec1_dir, "Figure_1_Part1_Diurnal_Air_and_CrownSoil_Heatmaps_v2.png"), plot = fig_part1, width = 17.5, height = 4.4, dpi = 600)
+
+  fig_part2 <- bottom_row +
+    plot_annotation(
+      caption = "Panel D: Standard cumulative GDD_std trajectory showing conserved E–T4 thermal demand (644–682 °C·d). Panel E: Cumulative Nighttime Heat Units (NHU = Σ max(0, Tmin - 5.0°C)) revealing the +27.8% (T1–T2) and +91.7% (T2–T3) nighttime heat surge in PZ Warm I vs. PZ Warm II.",
+      theme = theme(plot.caption = element_text(size = 9.8, color = "grey25", face = "italic", hjust = 0, lineheight = 1.15, margin = margin(t = 2)))
+    )
+  ggsave(file.path(sec1_dir, "Figure_1_Part2_GDD_and_Nighttime_Heat_Accumulation_v2.png"), plot = fig_part2, width = 17.5, height = 6.2, dpi = 600)
+
+  fig_v2 <- (top_row / bottom_row) +
+    plot_layout(heights = c(0.80, 1.15)) +
+    plot_annotation(
+      caption = paste0(
+        "Panels A–C: Stage-specific daytime maximum air (ΔTmax), nighttime minimum air (ΔTmin), and diurnal crown-soil temperature disparities relative to NWPZ Baseline (shared diverging scale).\n",
+        "Panel D: Standard cumulative GDD_std trajectory showing conserved E–T4 thermal demand (644–682 °C·d). Panel E: Cumulative Nighttime Heat Units (NHU = Σ max(0, Tmin - 5.0°C)) revealing the +27.8% (T1–T2) and +91.7% (T2–T3) nighttime heat surge in PZ Warm I vs. PZ Warm II."
+      ),
+      theme = theme(plot.caption = element_text(size = 9.8, color = "grey25", face = "italic", hjust = 0, lineheight = 1.15))
     )
 
-  p_disparities_comp <- (p_disp_air | p_disp_soil) / p_disp_gdd +
-    plot_layout(heights = c(1.0, 1.15))
-
-  ggsave(file.path(sec1_dir, "Figure_Thermal_Disparities_and_Stage_Dynamics.png"),
-         plot = p_disparities_comp, width = 14.8, height = 11.2, dpi = 600)
-  ggsave(file.path(weather_alt_dir, "Fig_1D_Temperature_Disparities_Compound.png"),
-         plot = p_disp_air, width = 8.5, height = 5.2, dpi = 600)
-  ggsave(file.path(weather_alt_dir, "Fig_1E_Thermal_Dynamics_and_GDD_Combined.png"),
-         plot = p_disp_gdd, width = 11, height = 6.2, dpi = 600)
+  ggsave(file.path(sec1_dir, "Figure_Thermal_Disparities_and_Stage_Dynamics_v2.png"), plot = fig_v2, width = 18.0, height = 10.4, dpi = 600)
 } else {
   cat("  -> Section 1 [SKIPPED - Assets Finalized & Protected]\n")
 }
@@ -977,91 +1065,161 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
 # ==============================================================================
 cat(">>> Executing Section 2: Intra-Environment Linear Mixed Models & BLUE Extraction...\n")
 
+# ----------------------------------------------------------------------------
+# 2.1 Non-Destructive Load of Master_Data.xlsx & Merge of Block_true for Delhi
+#     (Executed unconditionally so master_raw & cryptographic cache_key exist
+#      even when RUN_SECTION_2_BLUES = FALSE)
+# ----------------------------------------------------------------------------
+stopifnot(file.exists(data_file_path), file.exists(gs_map_path))
+
+data_md5_Full <- as.character(tools::md5sum(data_file_path))
+gs_md5_Full   <- as.character(tools::md5sum(gs_map_path))
+
+gs_raw <- read_excel(gs_map_path, sheet = "Sheet1")
+names(gs_raw) <- c("Original_Sr_No", "Genotype_Raw", "Genotype_No", "Rep_Raw")
+gs_raw <- gs_raw %>%
+  mutate(
+    Original_Sr_No = as.integer(Original_Sr_No),
+    Genotype_Clean = trimws(as.character(Genotype_Raw)),
+    Genotype_No    = as.integer(Genotype_No),
+    Replication    = as.character(as.integer(Rep_Raw))
+  )
+
+# Load Raw Field Observations from Master_Data.xlsx without modifying file on disk
+trial_list <- list()
+for (s in env_metadata$Sheet) {
+  raw_df <- read_excel(data_file_path, sheet = s)
+  names(raw_df) <- gsub("Tmax", "T4", names(raw_df))
+  raw_df <- raw_df %>% filter(!is.na(Genotype))
+  raw_df$Sheet <- s
+  raw_df$Environment <- env_metadata$Env_Name[env_metadata$Sheet == s]
+  raw_df$Row_Order_In_Sheet <- seq_len(nrow(raw_df))
+  raw_df$Genotype_Clean <- trimws(as.character(raw_df$Genotype))
+  raw_df$Rep_Char       <- as.character(as.integer(raw_df$Replication))
+  trial_list[[s]] <- raw_df
+}
+master_raw <- bind_rows(trial_list)
+
+# Compute Block_true dynamically from recorded counts in Delhi sheets
+del_sub_counts <- master_raw %>% filter(Sheet == env_metadata$Sheet[env_metadata$Location == "Delhi"][1])
+n_plots_per_rep_del  <- length(unique(del_sub_counts$Genotype_Clean))
+n_blocks_per_rep_del <- length(unique(del_sub_counts$Block))
+n_plots_per_blk_del  <- n_plots_per_rep_del %/% n_blocks_per_rep_del
+
+gs_raw <- gs_raw %>%
+  mutate(
+    Block_From_Sr = ((Original_Sr_No - 1L) %% n_plots_per_rep_del) %/% n_plots_per_blk_del + 1L
+  )
+
+# Lookup maps for R1 (canonical packet order) and R2 (randomized packet order)
+gs_r1_lookup <- gs_raw %>%
+  filter(Replication == unique(Replication)[1]) %>%
+  select(Genotype_Clean, Genotype_No, Sr_R1 = Original_Sr_No, Block_Pos_GS_R1 = Block_From_Sr)
+gs_r2_lookup <- gs_raw %>%
+  filter(Replication == unique(Replication)[2]) %>%
+  select(Genotype_Clean, Sr_R2 = Original_Sr_No, Block_Pos_GS_R2 = Block_From_Sr)
+
+master_raw <- master_raw %>%
+  left_join(
+    gs_raw %>% select(Genotype_Clean, Replication, Original_Sr_No, Block_From_Sr),
+    by = c("Genotype_Clean", "Rep_Char" = "Replication")
+  ) %>%
+  left_join(gs_r1_lookup, by = "Genotype_Clean") %>%
+  left_join(gs_r2_lookup, by = "Genotype_Clean") %>%
+  mutate(
+    Location = env_metadata$Location[match(Sheet, env_metadata$Sheet)],
+    Block_true = ifelse(Location == "Delhi", as.character(Block_From_Sr), NA_character_),
+    # Diagnostic field position block: in Dharwad, S1 followed GS R1 packet order and S2 followed GS R2 packet order
+    Field_Pos_Block_Diagnostic = case_when(
+      Sheet %in% c("Delhi_S2", "Delhi_S1") ~ as.integer(Block_From_Sr),
+      Sheet == "Dharwad_S1"                ~ as.integer(Block_Pos_GS_R1),
+      Sheet == "Dharwad_S2"                ~ as.integer(Block_Pos_GS_R2),
+      TRUE                                 ~ NA_integer_
+    )
+  )
+
+master_raw$Genotype    <- as.factor(master_raw$Genotype_Clean)
+master_raw$Replication <- as.factor(master_raw$Rep_Char)
+master_raw$Block       <- as.factor(master_raw$Block)
+master_raw$Block_true  <- as.factor(master_raw$Block_true)
+master_raw$Env_Factor  <- factor(master_raw$Environment, levels = env_metadata$Env_Name)
+
+stopifnot(sum(is.na(master_raw$Block_true[master_raw$Location == "Delhi"])) == 0L)
+
+# Worker functions & cryptographic cache key (shared by both run and skip branches)
+traits_to_run <- c("T1_Count", "T2_Count", "T3_Count", "T4_Count", "PT_Count", "GrainYld", "TKW", "AUTPC", "AUTPC_norm")
+
+fit_delhi_model_A <- function(df_sub, tr_name) {
+  f_mod <- as.formula(paste0(tr_name, " ~ Genotype + Replication + (1 | Replication:Block_true)"))
+  m_fit <- suppressMessages(lmer(f_mod, data = df_sub, REML = TRUE, control = lmerControl(optimizer = "bobyqa")))
+  emm_obj <- suppressMessages(emmeans(m_fit, "Genotype", mode = "kenward-roger"))
+  emm_df  <- as.data.frame(emm_obj)
+  df_meth <- if (all(is.infinite(emm_df$df))) "asymptotic" else "kenward-roger"
+  if (df_meth == "asymptotic") {
+    stop(sprintf("CRITICAL: emmeans silently fell back to asymptotic df in Delhi Model A for trait %s", tr_name))
+  }
+  vc_df <- as.data.frame(VarCorr(m_fit))
+  vb <- vc_df$vcov[vc_df$grp == "Replication:Block_true"]
+  ve <- vc_df$vcov[vc_df$grp == "Residual"]
+  conv_msgs <- m_fit@optinfo$conv$lme4$messages
+  conv_str  <- if (is.null(conv_msgs)) "OK" else paste(conv_msgs, collapse = "; ")
+  list(
+    model = m_fit,
+    emm_df = emm_df,
+    df_method = df_meth,
+    is_singular = isSingular(m_fit),
+    conv_msg = conv_str,
+    var_block = vb,
+    var_resid = ve,
+    formula_str = paste0(tr_name, " ~ Genotype + Replication + (1 | Replication:Block_true)"),
+    engine_str = "lme4::lmer (REML)"
+  )
+}
+
+fit_rcbd_lm <- function(df_sub, tr_name) {
+  f_mod <- as.formula(paste0(tr_name, " ~ Genotype + Replication"))
+  m_fit <- lm(f_mod, data = df_sub)
+  emm_df <- as.data.frame(emmeans(m_fit, "Genotype"))
+  ve <- sigma(m_fit)^2
+  list(
+    model = m_fit,
+    emm_df = emm_df,
+    df_method = "exact-ols-t",
+    is_singular = NA,
+    conv_msg = "OK",
+    var_block = NA_real_,
+    var_resid = ve,
+    formula_str = paste0(tr_name, " ~ Genotype + Replication"),
+    engine_str = "stats::lm (OLS)"
+  )
+}
+
+cache_dir <- file.path(project_root, "Cache_BLUEs")
+dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+
+cache_payload <- list(
+  master_data_md5 = data_md5_Full,
+  gs_map_md5      = gs_md5_Full,
+  pheno_spec_hash = digest::digest(master_pheno_spec, algo = "md5"),
+  traits_vec      = traits_to_run,
+  delhi_choice    = DELHI_PRIMARY_MODEL,
+  worker_A_form   = deparse(formals(fit_delhi_model_A)),
+  worker_A_body   = deparse(body(fit_delhi_model_A)),
+  worker_B_form   = deparse(formals(fit_rcbd_lm)),
+  worker_B_body   = deparse(body(fit_rcbd_lm)),
+  r_version       = R.version.string,
+  lme4_version    = as.character(packageVersion("lme4")),
+  emmeans_version = as.character(packageVersion("emmeans"))
+)
+cache_key <- paste0(
+  substr(data_md5_Full, 1, 8), "_",
+  substr(gs_md5_Full, 1, 8), "_",
+  substr(digest::digest(cache_payload, algo = "md5"), 1, 12)
+)
+
 if (isTRUE(RUN_SECTION_2_BLUES)) {
   sec2_dir <- file.path(assets_dir, "Section_2_BLUE_Extraction")
   dir.create(sec2_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # ----------------------------------------------------------------------------
-  # 2.1 Non-Destructive Load of Master_Data.xlsx & Merge of Block_true for Delhi
-  # ----------------------------------------------------------------------------
-  data_file_path <- file.path(project_root, "Master_Data.xlsx")
-  gs_map_path    <- "D:/PhD School/Research/GS population information.xlsx"
-  dhw_orig_path  <- "D:/PhD School/Research/Data_Dharwad.xlsx"
-  stopifnot(file.exists(data_file_path), file.exists(gs_map_path))
-
-  data_md5_Full <- as.character(tools::md5sum(data_file_path))
-  gs_md5_Full   <- as.character(tools::md5sum(gs_map_path))
-
-  gs_raw <- read_excel(gs_map_path, sheet = "Sheet1")
-  names(gs_raw) <- c("Original_Sr_No", "Genotype_Raw", "Genotype_No", "Rep_Raw")
-  gs_raw <- gs_raw %>%
-    mutate(
-      Original_Sr_No = as.integer(Original_Sr_No),
-      Genotype_Clean = trimws(as.character(Genotype_Raw)),
-      Genotype_No    = as.integer(Genotype_No),
-      Replication    = as.character(as.integer(Rep_Raw))
-    )
-
-  # Load Raw Field Observations from Master_Data.xlsx without modifying file on disk
-  trial_list <- list()
-  for (s in env_metadata$Sheet) {
-    raw_df <- read_excel(data_file_path, sheet = s)
-    names(raw_df) <- gsub("Tmax", "T4", names(raw_df))
-    raw_df <- raw_df %>% filter(!is.na(Genotype))
-    raw_df$Sheet <- s
-    raw_df$Environment <- env_metadata$Env_Name[env_metadata$Sheet == s]
-    raw_df$Row_Order_In_Sheet <- seq_len(nrow(raw_df))
-    raw_df$Genotype_Clean <- trimws(as.character(raw_df$Genotype))
-    raw_df$Rep_Char       <- as.character(as.integer(raw_df$Replication))
-    trial_list[[s]] <- raw_df
-  }
-  master_raw <- bind_rows(trial_list)
-
-  # Compute Block_true dynamically from recorded counts in Delhi sheets
-  del_sub_counts <- master_raw %>% filter(Sheet == env_metadata$Sheet[env_metadata$Location == "Delhi"][1])
-  n_plots_per_rep_del  <- length(unique(del_sub_counts$Genotype_Clean))
-  n_blocks_per_rep_del <- length(unique(del_sub_counts$Block))
-  n_plots_per_blk_del  <- n_plots_per_rep_del %/% n_blocks_per_rep_del
-
-  gs_raw <- gs_raw %>%
-    mutate(
-      Block_From_Sr = ((Original_Sr_No - 1L) %% n_plots_per_rep_del) %/% n_plots_per_blk_del + 1L
-    )
-
-  # Lookup maps for R1 (canonical packet order) and R2 (randomized packet order)
-  gs_r1_lookup <- gs_raw %>%
-    filter(Replication == unique(Replication)[1]) %>%
-    select(Genotype_Clean, Genotype_No, Sr_R1 = Original_Sr_No, Block_Pos_GS_R1 = Block_From_Sr)
-  gs_r2_lookup <- gs_raw %>%
-    filter(Replication == unique(Replication)[2]) %>%
-    select(Genotype_Clean, Sr_R2 = Original_Sr_No, Block_Pos_GS_R2 = Block_From_Sr)
-
-  master_raw <- master_raw %>%
-    left_join(
-      gs_raw %>% select(Genotype_Clean, Replication, Original_Sr_No, Block_From_Sr),
-      by = c("Genotype_Clean", "Rep_Char" = "Replication")
-    ) %>%
-    left_join(gs_r1_lookup, by = "Genotype_Clean") %>%
-    left_join(gs_r2_lookup, by = "Genotype_Clean") %>%
-    mutate(
-      Location = env_metadata$Location[match(Sheet, env_metadata$Sheet)],
-      Block_true = ifelse(Location == "Delhi", as.character(Block_From_Sr), NA_character_),
-      # Diagnostic field position block: in Dharwad, S1 followed GS R1 packet order and S2 followed GS R2 packet order
-      Field_Pos_Block_Diagnostic = case_when(
-        Sheet %in% c("Delhi_S2", "Delhi_S1") ~ as.integer(Block_From_Sr),
-        Sheet == "Dharwad_S1"                ~ as.integer(Block_Pos_GS_R1),
-        Sheet == "Dharwad_S2"                ~ as.integer(Block_Pos_GS_R2),
-        TRUE                                 ~ NA_integer_
-      ),
-      # Apply centralized yield unit scaling (locked at kg/plot per user decision)
-      GrainYld = GrainYld * CONVERSION_PLOT_TO_M2
-    )
-
-  master_raw$Genotype    <- as.factor(master_raw$Genotype_Clean)
-  master_raw$Replication <- as.factor(master_raw$Rep_Char)
-  master_raw$Block       <- as.factor(master_raw$Block)
-  master_raw$Block_true  <- as.factor(master_raw$Block_true)
-  master_raw$Env_Factor  <- factor(master_raw$Environment, levels = env_metadata$Env_Name)
 
   cat("\n--- Section 2.1: Non-Destructive Delhi Block Mapping Log ---\n")
   cat(sprintf("  Primary Phenotype File : %s (MD5: %s)\n", data_file_path, data_md5_Full))
@@ -1070,7 +1228,6 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
               n_plots_per_rep_del, n_plots_per_blk_del))
   cat(sprintf("  Unmatched Delhi Rows   : %d\n",
               sum(is.na(master_raw$Block_true[master_raw$Location == "Delhi"]))))
-  stopifnot(sum(is.na(master_raw$Block_true[master_raw$Location == "Delhi"])) == 0L)
 
   # ----------------------------------------------------------------------------
   # 2.2 Random Sample of Delhi Genotypes for Field Book Verification
@@ -1144,18 +1301,21 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
       r2_canon <- NA
       cor_r1   <- NA_real_
       cor_r2   <- NA_real_
-      dhw_sh <- if (s == "Dharwad_S1") "Early Sowing" else "Normal Sowing"
+      dhw_sh_r1 <- if (s == "Dharwad_S1") "EarlyR1" else "NormalR1"
+      dhw_sh_r2 <- if (s == "Dharwad_S1") "EarlyR2" else "NormalR2"
       dhw_or_note <- "Data_Dharwad.xlsx not found"
-      if (file.exists(dhw_orig_path)) {
-        dhw_o <- read_excel(dhw_orig_path, sheet = dhw_sh)
-        dhw_o$Geno_Clean <- trimws(as.character(dhw_o$Genotype))
-        dhw_r1 <- dhw_o$Geno_Clean[dhw_o$Replication == 1]
-        dhw_r2 <- dhw_o$Geno_Clean[dhw_o$Replication == 2]
+      if (file.exists(dhw_orig_path) && all(c(dhw_sh_r1, dhw_sh_r2) %in% excel_sheets(dhw_orig_path))) {
+        dhw_o1 <- suppressMessages(read_excel(dhw_orig_path, sheet = dhw_sh_r1, skip = 1, .name_repair = "minimal"))
+        dhw_o2 <- suppressMessages(read_excel(dhw_orig_path, sheet = dhw_sh_r2, skip = 1, .name_repair = "minimal"))
+        dhw_r1 <- trimws(as.character(dhw_o1[[2]]))
+        dhw_r2 <- trimws(as.character(dhw_o2[[2]]))
+        dhw_r1 <- dhw_r1[!is.na(dhw_r1)]
+        dhw_r2 <- dhw_r2[!is.na(dhw_r2)]
         dhw_r1_eq_r2 <- identical(dhw_r1, dhw_r2)
         dhw_eq_canon <- identical(dhw_r1, gs_r1_lookup$Genotype_Clean[order(gs_r1_lookup$Sr_R1)])
         dhw_o_note <- sprintf(
-          "In Data_Dharwad.xlsx (%s): R1==R2 is %s, equals canonical order is %s; physical sowing followed %s packet order in both replicates",
-          dhw_sh, dhw_r1_eq_r2, dhw_eq_canon, if (s == "Dharwad_S1") "GS R1" else "GS R2"
+          "In Data_Dharwad.xlsx (%s/%s): R1==R2 is %s, equals canonical order is %s; physical sowing followed %s packet order in both replicates",
+          dhw_sh_r1, dhw_sh_r2, dhw_r1_eq_r2, dhw_eq_canon, if (s == "Dharwad_S1") "GS R1" else "GS R2"
         )
         dhw_or_note <- dhw_o_note
       }
@@ -1414,63 +1574,31 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
   write.csv(perm_summary_table, file.path(sec2_dir, "Table_Delhi_R2_Block_Permutation_Check.csv"), row.names = FALSE)
 
   # ----------------------------------------------------------------------------
-  # 2.7 Worker Functions, Cryptographic Cache Key & Model A vs Model B Comparison
+  # 2.7 Model A vs Model B Comparison
   # ----------------------------------------------------------------------------
-  traits_to_run <- c("T1_Count", "T2_Count", "T3_Count", "T4_Count", "PT_Count", "GrainYld", "TKW", "AUTPC", "AUTPC_norm")
-
-  fit_delhi_model_A <- function(df_sub, tr_name) {
-    f_mod <- as.formula(paste0(tr_name, " ~ Genotype + Replication + (1 | Replication:Block_true)"))
-    m_fit <- suppressMessages(lmer(f_mod, data = df_sub, REML = TRUE, control = lmerControl(optimizer = "bobyqa")))
-    emm_obj <- suppressMessages(emmeans(m_fit, "Genotype", mode = "kenward-roger"))
-    emm_df  <- as.data.frame(emm_obj)
-    df_meth <- if (all(is.infinite(emm_df$df))) "asymptotic" else "kenward-roger"
-    if (df_meth == "asymptotic") {
-      stop(sprintf("CRITICAL: emmeans silently fell back to asymptotic df in Delhi Model A for trait %s", tr_name))
-    }
-    vc_df <- as.data.frame(VarCorr(m_fit))
-    vb <- vc_df$vcov[vc_df$grp == "Replication:Block_true"]
-    ve <- vc_df$vcov[vc_df$grp == "Residual"]
-    conv_msgs <- m_fit@optinfo$conv$lme4$messages
-    conv_str  <- if (is.null(conv_msgs)) "OK" else paste(conv_msgs, collapse = "; ")
-    list(
-      model = m_fit,
-      emm_df = emm_df,
-      df_method = df_meth,
-      is_singular = isSingular(m_fit),
-      conv_msg = conv_str,
-      var_block = vb,
-      var_resid = ve,
-      formula_str = paste0(tr_name, " ~ Genotype + Replication + (1 | Replication:Block_true)"),
-      engine_str = "lme4::lmer (REML)"
-    )
-  }
-
-  fit_rcbd_lm <- function(df_sub, tr_name) {
-    f_mod <- as.formula(paste0(tr_name, " ~ Genotype + Replication"))
-    m_fit <- lm(f_mod, data = df_sub)
-    emm_df <- as.data.frame(emmeans(m_fit, "Genotype"))
-    ve <- sigma(m_fit)^2
-    list(
-      model = m_fit,
-      emm_df = emm_df,
-      df_method = "exact-ols-t",
-      is_singular = NA,
-      conv_msg = "OK",
-      var_block = NA_real_,
-      var_resid = ve,
-      formula_str = paste0(tr_name, " ~ Genotype + Replication"),
-      engine_str = "stats::lm (OLS)"
-    )
-  }
-
   # Compare Delhi Model A vs Model B across all 18 Delhi trait x trial combinations
+  model_a_cache_file <- file.path(cache_dir, paste0("ModelA_Audit_", cache_key, ".rds"))
+  delhi_model_A_cache <- if (!isTRUE(CLEAR_BLUE_CACHE) && file.exists(model_a_cache_file)) {
+    cat(sprintf("  Loading cached Delhi Model A fits (%s)...\n", basename(model_a_cache_file)))
+    readRDS(model_a_cache_file)
+  } else {
+    list()
+  }
+
   ab_summary_rows <- list()
   ab_geno_rows    <- list()
   for (s_del in c("Delhi_S2", "Delhi_S1")) {
     sub_del <- master_raw %>% filter(Sheet == s_del)
     e_nm    <- unique(sub_del$Environment)
     for (tr in traits_to_run) {
-      res_A <- fit_delhi_model_A(sub_del, tr)
+      key_st <- paste0(s_del, "_", tr)
+      res_A <- if (!is.null(delhi_model_A_cache[[key_st]])) {
+        delhi_model_A_cache[[key_st]]
+      } else {
+        fit_a_tmp <- fit_delhi_model_A(sub_del, tr)
+        delhi_model_A_cache[[key_st]] <- fit_a_tmp
+        fit_a_tmp
+      }
       res_B <- fit_rcbd_lm(sub_del, tr)
       df_A  <- res_A$emm_df %>% arrange(as.character(Genotype))
       df_B  <- res_B$emm_df %>% arrange(as.character(Genotype))
@@ -1520,6 +1648,7 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
       )
     }
   }
+  saveRDS(delhi_model_A_cache, model_a_cache_file)
   ab_summary_table <- bind_rows(ab_summary_rows)
   ab_geno_table    <- bind_rows(ab_geno_rows)
   cat("\n--- Section 2.7: Delhi Model A vs Model B Comparison Summary ---\n")
@@ -1528,29 +1657,6 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
   write.csv(ab_summary_table, file.path(sec2_dir, "Table_Delhi_Model_A_vs_B_Summary.csv"), row.names = FALSE)
   write.csv(ab_geno_table,    file.path(sec2_dir, "Table_Delhi_Model_A_vs_B_Genotype_BLUEs_and_SEs.csv"), row.names = FALSE)
 
-  # Cryptographic Cache Key incorporating all data hashes, spec, traits, worker formals/body, and package versions
-  cache_dir <- file.path(project_root, "Cache_BLUEs")
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-
-  cache_payload <- list(
-    master_data_md5 = data_md5_Full,
-    gs_map_md5      = gs_md5_Full,
-    pheno_spec_hash = digest::digest(master_pheno_spec, algo = "md5"),
-    traits_vec      = traits_to_run,
-    delhi_choice    = DELHI_PRIMARY_MODEL,
-    worker_A_form   = deparse(formals(fit_delhi_model_A)),
-    worker_A_body   = deparse(body(fit_delhi_model_A)),
-    worker_B_form   = deparse(formals(fit_rcbd_lm)),
-    worker_B_body   = deparse(body(fit_rcbd_lm)),
-    r_version       = R.version.string,
-    lme4_version    = as.character(packageVersion("lme4")),
-    emmeans_version = as.character(packageVersion("emmeans"))
-  )
-  cache_key <- paste0(
-    substr(data_md5_Full, 1, 8), "_",
-    substr(gs_md5_Full, 1, 8), "_",
-    substr(digest::digest(cache_payload, algo = "md5"), 1, 12)
-  )
   cat(sprintf("\n--- Section 2.7: Cryptographic BLUE Cache Key: %s ---\n", cache_key))
 
   # ----------------------------------------------------------------------------
@@ -1594,8 +1700,9 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
 
     cat(sprintf("  Fitting primary Stage-1 models for %s (%s) [Location: %s]...\n", s_code, e_name, loc_i))
     for (tr in traits_to_run) {
+      key_st <- paste0(s_code, "_", tr)
       res_fit <- if (loc_i == "Delhi") {
-        fit_delhi_model_A(sub_raw, tr)
+        if (!is.null(delhi_model_A_cache[[key_st]])) delhi_model_A_cache[[key_st]] else fit_delhi_model_A(sub_raw, tr)
       } else {
         fit_rcbd_lm(sub_raw, tr)
       }
@@ -1707,108 +1814,76 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
     write.csv(old_vs_new_table, file.path(sec2_dir, "Table_Old_vs_New_BLUE_Comparison.csv"), row.names = FALSE)
   }
 
-  # ----------------------------------------------------------------------------
-  # 2.9 Construct Master Stage-1 BLUE Data Frame (blues_df) & All Derived Traits
-  # ----------------------------------------------------------------------------
-  blues_df <- bind_rows(all_blues) %>%
-    left_join(
-      env_metadata %>% select(Env_Name, Sheet, Location, Int_E_T1, Int_T1_T2, Int_T2_T3, Int_T3_T4, Total_E_T4),
-      by = c("Environment" = "Env_Name")
-    ) %>%
-    left_join(gs_r1_lookup %>% select(Genotype_Clean, Genotype_No, Block_Pos_GS_R1), by = c("Genotype" = "Genotype_Clean")) %>%
-    left_join(gs_r2_lookup %>% select(Genotype_Clean, Block_Pos_GS_R2), by = c("Genotype" = "Genotype_Clean")) %>%
-    mutate(
-      Field_Pos_Block_Diagnostic = case_when(
-        Sheet %in% c("Delhi_S2", "Delhi_S1") ~ NA_integer_,
-        Sheet == "Dharwad_S1"                ~ as.integer(Block_Pos_GS_R1),
-        Sheet == "Dharwad_S2"                ~ as.integer(Block_Pos_GS_R2),
-        TRUE                                 ~ NA_integer_
-      ),
-      Dur_Early = Int_E_T1 + Int_T1_T2,
-      Dur_Late  = Int_T2_T3 + Int_T3_T4,
-      AUTPC_Early = (0.5 * (COUNT_AT_EMERGENCE_MAIN + T1_Count) * Int_E_T1) +
-                    (0.5 * (T1_Count + T2_Count) * Int_T1_T2),
-      AUTPC_Late  = (0.5 * (T2_Count + T3_Count) * Int_T2_T3) +
-                    (0.5 * (T3_Count + T4_Count) * Int_T3_T4),
-      Mean_Tiller_Early = AUTPC_Early / Dur_Early,
-      Mean_Tiller_Late  = AUTPC_Late  / Dur_Late,
-      AUTPC_Asymmetry   = (Mean_Tiller_Early - Mean_Tiller_Late) / (Mean_Tiller_Early + Mean_Tiller_Late),
-      Rate_E_T1  = (T1_Count - COUNT_AT_EMERGENCE_MAIN) / Int_E_T1,
-      Rate_T1_T2 = (T2_Count - T1_Count) / Int_T1_T2,
-      Rate_T2_T3 = (T3_Count - T2_Count) / Int_T2_T3,
-      Rate_T3_T4 = (T4_Count - T3_Count) / Int_T3_T4,
-      TCE = ifelse(T4_Count == 0, NA_real_, PT_Count / T4_Count),
-      Env_Factor = factor(Environment, levels = env_metadata$Env_Name)
-    )
-
-  # Exact additivity holds against AUTPC recomputed from the count BLUEs. The separately modelled AUTPC BLUE
-  # differs because each trait has its own fitted variance components; that gap is reported as a diagnostic.
-  blues_df$AUTPC_From_Count_BLUEs <- blues_df$AUTPC_Early + blues_df$AUTPC_Late
-  recomputed_total <- (0.5 * (COUNT_AT_EMERGENCE_MAIN + blues_df$T1_Count) * blues_df$Int_E_T1) +
-                      (0.5 * (blues_df$T1_Count + blues_df$T2_Count) * blues_df$Int_T1_T2) +
-                      (0.5 * (blues_df$T2_Count + blues_df$T3_Count) * blues_df$Int_T2_T3) +
-                      (0.5 * (blues_df$T3_Count + blues_df$T4_Count) * blues_df$Int_T3_T4)
-  max_autpc_decomp_err <- max(abs(blues_df$AUTPC_From_Count_BLUEs - recomputed_total), na.rm = TRUE)
-  max_autpc_model_gap  <- max(abs(blues_df$AUTPC_From_Count_BLUEs - blues_df$AUTPC), na.rm = TRUE)
-  cat(sprintf("  AUTPC additivity (Early + Late vs recomputed from count BLUEs): max abs error = %.3e\n", max_autpc_decomp_err))
-  cat(sprintf("  Diagnostic gap, recomputed vs separately modelled AUTPC BLUE: max abs = %.3f\n", max_autpc_model_gap))
-  stopifnot(max_autpc_decomp_err < 1e-10, sum(is.na(blues_df$TCE)) == 0L)
 } else {
-  cat("  -> Section 2 [SKIPPED - Loading Stage-1 BLUEs from Cache_BLUEs]\n")
-  cache_dir <- file.path(project_root, "Cache_BLUEs")
+  cat(sprintf("  -> Section 2 [SKIPPED - Loading Stage-1 BLUEs matching Cryptographic Key: %s]\n", cache_key))
+  master_raw <- master_raw %>%
+    left_join(env_metadata %>% select(Sheet, Int_E_T1, Int_T1_T2, Int_T2_T3, Int_T3_T4, Total_E_T4), by = "Sheet") %>%
+    mutate(
+      AUTPC = (0.5 * (COUNT_AT_EMERGENCE_MAIN + T1_Count) * Int_E_T1) +
+              (0.5 * (T1_Count + T2_Count) * Int_T1_T2) +
+              (0.5 * (T2_Count + T3_Count) * Int_T2_T3) +
+              (0.5 * (T3_Count + T4_Count) * Int_T3_T4),
+      AUTPC_norm = AUTPC / Total_E_T4,
+      TCE = ifelse(T4_Count == 0, NA_real_, PT_Count / T4_Count)
+    )
   all_blues <- list()
   for (s_code in env_metadata$Sheet) {
-    cands <- list.files(cache_dir, pattern = paste0("^BLUEs_", s_code, "_.*\\.rds$"), full.names = TRUE)
-    stopifnot(length(cands) > 0)
-    latest_rds <- rownames(file.info(cands))[which.max(file.info(cands)$mtime)]
-    all_blues[[s_code]] <- readRDS(latest_rds)
+    c_file <- file.path(cache_dir, paste0("BLUEs_", s_code, "_", cache_key, ".rds"))
+    if (!file.exists(c_file)) {
+      stop(sprintf("CRITICAL CACHE KEY MISMATCH: Expected cached BLUE file '%s' not found. Set RUN_SECTION_2_BLUES <- TRUE to recompute BLUEs for current data/model specification.", basename(c_file)))
+    }
+    b_loaded <- readRDS(c_file)
+    b_loaded$Environment <- env_metadata$Env_Name[env_metadata$Sheet == s_code]
+    all_blues[[s_code]] <- b_loaded
   }
-  gs_raw_tmp <- read_excel("D:/PhD School/Research/GS population information.xlsx", sheet = "Sheet1")
-  names(gs_raw_tmp) <- c("Original_Sr_No", "Genotype_Raw", "Genotype_No", "Rep_Raw")
-  gs_raw_tmp <- gs_raw_tmp %>%
-    mutate(
-      Original_Sr_No = as.integer(Original_Sr_No),
-      Genotype_Clean = trimws(as.character(Genotype_Raw)),
-      Genotype_No    = as.integer(Genotype_No),
-      Replication    = as.character(as.integer(Rep_Raw)),
-      Block_From_Sr  = ((Original_Sr_No - 1L) %% 200L) %/% 20L + 1L
-    )
-  gs_r1_lookup <- gs_raw_tmp %>% filter(Replication == unique(Replication)[1]) %>%
-    select(Genotype_Clean, Genotype_No, Block_Pos_GS_R1 = Block_From_Sr)
-  gs_r2_lookup <- gs_raw_tmp %>% filter(Replication == unique(Replication)[2]) %>%
-    select(Genotype_Clean, Block_Pos_GS_R2 = Block_From_Sr)
-  blues_df <- bind_rows(all_blues) %>%
-    left_join(
-      env_metadata %>% select(Env_Name, Sheet, Location, Int_E_T1, Int_T1_T2, Int_T2_T3, Int_T3_T4, Total_E_T4),
-      by = c("Environment" = "Env_Name")
-    ) %>%
-    left_join(gs_r1_lookup, by = c("Genotype" = "Genotype_Clean")) %>%
-    left_join(gs_r2_lookup, by = c("Genotype" = "Genotype_Clean")) %>%
-    mutate(
-      Field_Pos_Block_Diagnostic = case_when(
-        Sheet %in% c("Delhi_S2", "Delhi_S1") ~ NA_integer_,
-        Sheet == "Dharwad_S1"                ~ as.integer(Block_Pos_GS_R1),
-        Sheet == "Dharwad_S2"                ~ as.integer(Block_Pos_GS_R2),
-        TRUE                                 ~ NA_integer_
-      ),
-      Dur_Early = Int_E_T1 + Int_T1_T2,
-      Dur_Late  = Int_T2_T3 + Int_T3_T4,
-      AUTPC_Early = (0.5 * (COUNT_AT_EMERGENCE_MAIN + T1_Count) * Int_E_T1) +
-                    (0.5 * (T1_Count + T2_Count) * Int_T1_T2),
-      AUTPC_Late  = (0.5 * (T2_Count + T3_Count) * Int_T2_T3) +
-                    (0.5 * (T3_Count + T4_Count) * Int_T3_T4),
-      AUTPC_From_Count_BLUEs = AUTPC_Early + AUTPC_Late,
-      Mean_Tiller_Early = AUTPC_Early / Dur_Early,
-      Mean_Tiller_Late  = AUTPC_Late  / Dur_Late,
-      AUTPC_Asymmetry   = (Mean_Tiller_Early - Mean_Tiller_Late) / (Mean_Tiller_Early + Mean_Tiller_Late),
-      Rate_E_T1  = (T1_Count - COUNT_AT_EMERGENCE_MAIN) / Int_E_T1,
-      Rate_T1_T2 = (T2_Count - T1_Count) / Int_T1_T2,
-      Rate_T2_T3 = (T3_Count - T2_Count) / Int_T2_T3,
-      Rate_T3_T4 = (T4_Count - T3_Count) / Int_T3_T4,
-      TCE = ifelse(T4_Count == 0, NA_real_, PT_Count / T4_Count),
-      Env_Factor = factor(Environment, levels = env_metadata$Env_Name)
-    )
 }
+
+# ----------------------------------------------------------------------------
+# 2.9 Construct Master Stage-1 BLUE Data Frame (blues_df) & All Derived Traits
+# ----------------------------------------------------------------------------
+blues_df <- bind_rows(all_blues) %>%
+  left_join(
+    env_metadata %>% select(Env_Name, Sheet, Location, Int_E_T1, Int_T1_T2, Int_T2_T3, Int_T3_T4, Total_E_T4),
+    by = c("Environment" = "Env_Name")
+  ) %>%
+  left_join(gs_r1_lookup %>% select(Genotype_Clean, Genotype_No, Block_Pos_GS_R1), by = c("Genotype" = "Genotype_Clean")) %>%
+  left_join(gs_r2_lookup %>% select(Genotype_Clean, Block_Pos_GS_R2), by = c("Genotype" = "Genotype_Clean")) %>%
+  mutate(
+    Field_Pos_Block_Diagnostic = case_when(
+      Sheet %in% c("Delhi_S2", "Delhi_S1") ~ NA_integer_,
+      Sheet == "Dharwad_S1"                ~ as.integer(Block_Pos_GS_R1),
+      Sheet == "Dharwad_S2"                ~ as.integer(Block_Pos_GS_R2),
+      TRUE                                 ~ NA_integer_
+    ),
+    Dur_Early = Int_E_T1 + Int_T1_T2,
+    Dur_Late  = Int_T2_T3 + Int_T3_T4,
+    AUTPC_Early = (0.5 * (COUNT_AT_EMERGENCE_MAIN + T1_Count) * Int_E_T1) +
+                  (0.5 * (T1_Count + T2_Count) * Int_T1_T2),
+    AUTPC_Late  = (0.5 * (T2_Count + T3_Count) * Int_T2_T3) +
+                  (0.5 * (T3_Count + T4_Count) * Int_T3_T4),
+    Mean_Tiller_Early = AUTPC_Early / Dur_Early,
+    Mean_Tiller_Late  = AUTPC_Late  / Dur_Late,
+    AUTPC_Asymmetry   = (Mean_Tiller_Early - Mean_Tiller_Late) / (Mean_Tiller_Early + Mean_Tiller_Late),
+    Rate_E_T1  = (T1_Count - COUNT_AT_EMERGENCE_MAIN) / Int_E_T1,
+    Rate_T1_T2 = (T2_Count - T1_Count) / Int_T1_T2,
+    Rate_T2_T3 = (T3_Count - T2_Count) / Int_T2_T3,
+    Rate_T3_T4 = (T4_Count - T3_Count) / Int_T3_T4,
+    TCE = ifelse(T4_Count == 0, NA_real_, PT_Count / T4_Count),
+    Env_Factor = factor(Environment, levels = env_metadata$Env_Name)
+  )
+
+# Exact additivity holds against AUTPC recomputed from the count BLUEs. The separately modelled AUTPC BLUE
+# differs because each trait has its own fitted variance components; that gap is reported as a diagnostic.
+blues_df$AUTPC_From_Count_BLUEs <- blues_df$AUTPC_Early + blues_df$AUTPC_Late
+recomputed_total <- (0.5 * (COUNT_AT_EMERGENCE_MAIN + blues_df$T1_Count) * blues_df$Int_E_T1) +
+                    (0.5 * (blues_df$T1_Count + blues_df$T2_Count) * blues_df$Int_T1_T2) +
+                    (0.5 * (blues_df$T2_Count + blues_df$T3_Count) * blues_df$Int_T2_T3) +
+                    (0.5 * (blues_df$T3_Count + blues_df$T4_Count) * blues_df$Int_T3_T4)
+max_autpc_decomp_err <- max(abs(blues_df$AUTPC_From_Count_BLUEs - recomputed_total), na.rm = TRUE)
+max_autpc_model_gap  <- max(abs(blues_df$AUTPC_From_Count_BLUEs - blues_df$AUTPC), na.rm = TRUE)
+cat(sprintf("  AUTPC additivity (Early + Late vs recomputed from count BLUEs): max abs error = %.3e\n", max_autpc_decomp_err))
+cat(sprintf("  Diagnostic gap, recomputed vs separately modelled AUTPC BLUE: max abs = %.3f\n", max_autpc_model_gap))
+stopifnot(max_autpc_decomp_err < 1e-10, sum(is.na(blues_df$TCE)) == 0L)
 
 
 # ==============================================================================
@@ -1910,18 +1985,18 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
   print(prs_tce_logit)
 
   # 3.2 Repeated-Measures Modeling, Heteroskedasticity Audit, GLS, & Wilcoxon
-  prof_theme <- theme_minimal(base_size = 12.5) +
+  prof_theme <- theme_minimal(base_size = 13.5) +
     theme(
       legend.position = "none",
-      axis.text.x = element_text(angle = 20, hjust = 1, face = "bold", size = 10.5, color = "grey15"),
-      axis.text.y = element_text(size = 10, color = "grey20"),
-      axis.title.y = element_text(face = "bold", size = 11),
-      plot.title = element_text(face = "bold", size = 12.5, hjust = 0.5, color = "#1B2631"),
-      plot.subtitle = element_text(size = 9.3, hjust = 0.5, color = "grey25", face = "italic", margin = margin(b = 6)),
+      axis.text.x = element_text(angle = 18, hjust = 1, face = "bold", size = 11.4, color = "grey10"),
+      axis.text.y = element_text(size = 11.0, face = "bold", color = "grey15"),
+      axis.title.y = element_text(face = "bold", size = 12.2, color = "black"),
+      plot.title = element_text(face = "bold", size = 14.0, hjust = 0.5, color = "#1B2631"),
+      plot.subtitle = element_text(size = 10.2, hjust = 0.5, color = "grey25", face = "italic", margin = margin(b = 5)),
       panel.grid.minor = element_blank(),
       panel.grid.major.x = element_blank(),
       panel.grid.major.y = element_line(color = "grey90", linewidth = 0.35),
-      plot.margin = margin(t = 6, r = 10, b = 6, l = 8)
+      plot.margin = margin(t = 5, r = 8, b = 4, l = 6)
     )
 
   env_levels <- levels(blues_df$Env_Factor)
@@ -2105,7 +2180,7 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
         Trait_SD_Ratio_Max_Min = round(sd_ratio, 2),
         Contrast_Design_Status = case_when(
           contrast == "NWPZ Baseline - NWPZ Warm" ~ "Within-Site (Delhi: Randomized Incomplete-Block Trials)",
-          contrast == "PZ Warm - PZ Acute"        ~ "Within-Site (Dharwad: Unrandomized Duplicated-Order Trials)",
+          contrast == "PZ Warm I - PZ Warm II" ~ "Within-Site (Dharwad: Unrandomized Duplicated-Order Trials)",
           TRUE                                    ~ "Between-Site (Confounded with Site & Experimental Design Differences)"
         ),
         p_unadj_lmer = 2 * (1 - pt(abs(t.ratio), df)),
@@ -2175,7 +2250,8 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
 
     # Store Relative Shift (% Delta vs NWPZ Baseline) for Panel F & Table 2
     base_mean_val <- env_means_vec["NWPZ Baseline"]
-    for (e_str in c("NWPZ Warm", "PZ Warm", "PZ Acute")) {
+    stress_envs_sec3 <- setdiff(env_metadata$Env_Name, "NWPZ Baseline")
+    for (e_str in stress_envs_sec3) {
       c_row <- contrasts_df %>% filter(contrast == paste0("NWPZ Baseline - ", e_str))
       # Note: contrast is Baseline - Stress, so Stress - Baseline = -estimate
       diff_val <- -c_row$estimate_gls[1]
@@ -2223,21 +2299,21 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
       )
 
     p_str <- if (p_stat < 0.0001) "P < 0.0001" else sprintf("P = %.4f", p_stat)
-    sub_spa <- sprintf("Repeated-Measures LMM: F(%d, %d) = %.2f, %s | Residual SD Ratio = %.2fx",
+    sub_spa <- sprintf("LMM: F(%d, %d) = %.1f, %s | Residual SD Ratio = %.2fx",
                        df_num, round(df_den), f_stat, p_str, sd_ratio)
 
     p_spa <- ggplot(blues_df, aes(x = Env_Factor, y = .data[[tr]], group = Genotype)) +
-      geom_vline(xintercept = 2.5, linetype = "dashed", color = "grey45", linewidth = 0.55) +
+      geom_vline(xintercept = 2.5, linetype = "dashed", color = "grey45", linewidth = 0.65) +
       geom_ribbon(data = env_means, aes(x = Env_Factor, ymin = q10_val, ymax = q90_val, group = 1),
-                  inherit.aes = FALSE, fill = "#3C5488", alpha = 0.12) +
+                  inherit.aes = FALSE, fill = "#3C5488", alpha = 0.13) +
       geom_ribbon(data = env_means, aes(x = Env_Factor, ymin = q25_val, ymax = q75_val, group = 1),
-                  inherit.aes = FALSE, fill = "#3C5488", alpha = 0.22) +
-      geom_line(alpha = 0.08, color = "grey40", linewidth = 0.30) +
-      geom_point(alpha = 0.15, color = "grey40", size = 0.7) +
+                  inherit.aes = FALSE, fill = "#3C5488", alpha = 0.24) +
+      geom_line(alpha = 0.09, color = "grey40", linewidth = 0.32) +
+      geom_point(alpha = 0.16, color = "grey40", size = 0.85) +
       geom_line(data = env_means, aes(x = Env_Factor, y = mean_val, group = 1),
-                inherit.aes = FALSE, color = "#DC0000", linewidth = 1.3) +
+                inherit.aes = FALSE, color = "#DC0000", linewidth = 1.50) +
       geom_point(data = env_means, aes(x = Env_Factor, y = mean_val, group = 1),
-                 inherit.aes = FALSE, color = "#DC0000", size = 3.1) +
+                 inherit.aes = FALSE, color = "#DC0000", size = 3.60) +
       geom_label(
         data = env_means,
         aes(x = Env_Factor, y = mean_val, label = label_mean, group = 1),
@@ -2245,14 +2321,14 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
         fill = "white",
         color = "#B00000",
         fontface = "bold",
-        size = 3.05,
-        vjust = -0.55,
-        label.padding = unit(0.16, "lines"),
-        label.size = 0.32
+        size = 3.75,
+        vjust = -0.52,
+        label.padding = unit(0.20, "lines"),
+        label.size = 0.35
       ) +
       prof_theme +
       scale_y_continuous(
-        expand = expansion(mult = c(0.05, 0.16)),
+        expand = expansion(mult = c(0.05, 0.18)),
         labels = if (tr == "TCE") scales::percent_format(accuracy = 1) else ggplot2::waiver()
       ) +
       labs(
@@ -2265,62 +2341,67 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
   }
 
   # 3.3 Construct Panel F: Relative Phenotypic Shift vs. NWPZ Baseline (% Delta + 95% CI)
+  stress_envs_sec3 <- setdiff(env_metadata$Env_Name, "NWPZ Baseline")
   rel_shift_df <- bind_rows(rel_shift_rows) %>%
     mutate(
       Trait_Factor = factor(Trait_Short, levels = rev(unname(trait_short_sec3))),
-      Stress_Factor = factor(Stress_Env, levels = c("PZ Acute", "PZ Warm", "NWPZ Warm"))
+      Stress_Factor = factor(Stress_Env, levels = rev(stress_envs_sec3))
     )
 
   stress_cols_sec3 <- c(
-    "NWPZ Warm" = "#4DBBD5",
-    "PZ Warm"   = "#00A087",
-    "PZ Acute"  = "#3C5488"
+    "NWPZ Warm"  = "#4DBBD5",
+    "PZ Warm I"  = "#00A087",
+    "PZ Warm II" = "#3C5488"
   )
 
   p_rel_shift <- ggplot(rel_shift_df, aes(x = Pct_Delta, y = Trait_Factor, color = Stress_Factor, group = Stress_Factor)) +
-    geom_vline(xintercept = 0, linetype = "dashed", color = "#E64B35", linewidth = 0.75) +
-    geom_errorbarh(aes(xmin = CI_Lo, xmax = CI_Hi),
-                   position = position_dodge(width = 0.72), height = 0.24, linewidth = 0.75) +
-    geom_point(position = position_dodge(width = 0.72), size = 2.8) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "#E64B35", linewidth = 0.85) +
+    geom_errorbar(aes(xmin = CI_Lo, xmax = CI_Hi),
+                  position = position_dodge(width = 0.74), width = 0.28, linewidth = 0.90, orientation = "y") +
+    geom_point(position = position_dodge(width = 0.74), size = 3.40) +
     geom_text(
       aes(
-        x = ifelse(Pct_Delta >= 0, CI_Hi + 0.8, CI_Lo - 0.8),
+        x = ifelse(Pct_Delta >= 0, CI_Hi + 0.9, CI_Lo - 0.9),
         label = Label_Plot,
         hjust = ifelse(Pct_Delta >= 0, 0, 1)
       ),
-      position = position_dodge(width = 0.72),
-      size = 2.85,
+      position = position_dodge(width = 0.74),
+      size = 3.45,
       fontface = "bold",
       show.legend = FALSE
     ) +
-    annotate("text", x = 0.5, y = "Final Veg. Tillers (T4)", label = "NWPZ Baseline (0%)", hjust = 0, vjust = -2.4,
-             size = 2.9, fontface = "bold.italic", color = "#B03A2E") +
+    annotate("text", x = 0.6, y = "Final Veg. Tillers (T4)", label = "NWPZ Baseline (0%)", hjust = 0, vjust = -2.3,
+             size = 3.40, fontface = "bold.italic", color = "#B03A2E") +
     scale_color_manual(
       values = stress_cols_sec3,
-      breaks = c("NWPZ Warm", "PZ Warm", "PZ Acute"),
-      name = "Stress Regime vs. NWPZ Baseline:"
+      breaks = stress_envs_sec3,
+      name = "Stress Regime:"
     ) +
     scale_x_continuous(
-      limits = c(-39, 23),
       breaks = seq(-30, 20, by = 10),
       labels = function(x) sprintf("%+d%%", x)
     ) +
-    scale_y_discrete(expand = expansion(mult = c(0.10, 0.16))) +
-    coord_cartesian(clip = "off") +
+    scale_y_discrete(expand = expansion(mult = c(0.10, 0.17))) +
+    coord_cartesian(xlim = c(-43, 27), clip = "off") +
     prof_theme +
     theme(
       legend.position = "bottom",
-      legend.title = element_text(face = "bold", size = 9.5),
-      legend.text = element_text(face = "bold", size = 9.2),
-      legend.margin = margin(t = -4, b = 0),
-      axis.text.x = element_text(angle = 0, hjust = 0.5, face = "bold", size = 10),
-      axis.text.y = element_text(face = "bold", size = 10, color = "grey15"),
+      legend.title = element_text(face = "bold", size = 10.8),
+      legend.text = element_text(face = "bold", size = 10.4, margin = margin(r = 6)),
+      legend.key.width = unit(0.65, "cm"),
+      legend.spacing.x = unit(0.16, "cm"),
+      legend.margin = margin(t = -2, r = 8, b = 0, l = 0),
+      axis.text.x = element_text(angle = 0, hjust = 0.5, face = "bold", size = 11.0, color = "grey10"),
+      axis.text.y = element_text(face = "bold", size = 11.4, color = "grey10"),
+      axis.title.x = element_text(face = "bold", size = 12.0, color = "black"),
       panel.grid.major.x = element_line(color = "grey90", linewidth = 0.35),
-      panel.grid.major.y = element_line(color = "grey92", linewidth = 0.35)
+      panel.grid.major.y = element_line(color = "grey92", linewidth = 0.35),
+      plot.margin = margin(t = 5, r = 14, b = 4, l = 6)
     ) +
+    guides(color = guide_legend(nrow = 1, byrow = TRUE, override.aes = list(size = 3.8, linewidth = 1.1))) +
     labs(
       title = "Relative Trait Shift vs. NWPZ Baseline (%)",
-      subtitle = "Heteroskedastic GLS Mean % \u0394 (\u00b195% CI) & Tukey Significance vs. NWPZ Baseline",
+      subtitle = "Heteroskedastic GLS Mean % \u0394 (\u00b195% CI) vs. NWPZ Baseline",
       x = "Relative Phenotypic Shift (% \u0394 from NWPZ Baseline)",
       y = ""
     )
@@ -2332,15 +2413,16 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
                       plot_annotation(
                         tag_levels = 'A',
                         caption = paste0(
-                          "Panels A\u2013E: Grey trajectories = N = 200 paired genotypes across thermal regimes; blue ribbons = 10\u201390% (interdecile) and 25\u201375% (IQR) quantile fans; red line & badges = regime mean (Compact Letter Display).\n",
-                          "Dashed vertical line separates NWPZ (Delhi) and PZ (Dharwad) agro-climatic zones. CLD letters: regimes sharing a letter do not differ significantly (Tukey HSD, P \u2265 0.05; bracketed letters show heteroskedastic GLS where differing)."
+                          "Panels A\u2013E: Grey trajectories = N = 200 paired genotypes across thermal regimes; blue ribbons = 10\u201390% (interdecile) and 25\u201375% (IQR) quantile fans; red line & badges = regime mean (CLD).\n",
+                          "Dashed vertical line separates NWPZ (Delhi) and PZ (Dharwad) agro-climatic zones. Regimes sharing a letter do not differ significantly (Tukey HSD, P \u2265 0.05; bracketed letters = heteroskedastic GLS where differing)."
                         ),
                         theme = theme(
-                          plot.caption = element_text(size = 9.2, hjust = 0, color = "grey25", face = "italic", lineheight = 1.15, margin = margin(t = 6, b = 2))
+                          plot.caption = element_text(size = 9.8, hjust = 0, color = "grey20", face = "italic", lineheight = 1.15, margin = margin(t = 6, b = 2))
                         )
-                      )
+                      ) &
+                      theme(plot.tag = element_text(face = "bold", size = 15.5, color = "black"))
   ggsave(file.path(sec21_dir, "Global_Parameter_Paired_Genotype_Profiles.png"),
-         plot = p_spaghetti_comp, width = 13.5, height = 15.2, dpi = 600)
+         plot = p_spaghetti_comp, width = 14.2, height = 14.8, dpi = 600)
 
   # 3.5 Construct Consolidated Main Text Table 2 & Supplementary Table S3 + Styled Excel Workbook
   table_anova_summary <- bind_rows(anova_summary_list)
@@ -2365,21 +2447,21 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
       }
     }
 
-    rel_w  <- rel_shift_df %>% filter(Trait_Code == tr, Stress_Env == "NWPZ Warm")
-    rel_pw <- rel_shift_df %>% filter(Trait_Code == tr, Stress_Env == "PZ Warm")
-    rel_pa <- rel_shift_df %>% filter(Trait_Code == tr, Stress_Env == "PZ Acute")
-    an_row <- table_anova_summary %>% filter(Trait == tr)
+    rel_w   <- rel_shift_df %>% filter(Trait_Code == tr, Stress_Env == "NWPZ Warm")
+    rel_pw1 <- rel_shift_df %>% filter(Trait_Code == tr, Stress_Env == "PZ Warm I")
+    rel_pw2 <- rel_shift_df %>% filter(Trait_Code == tr, Stress_Env == "PZ Warm II")
+    an_row  <- table_anova_summary %>% filter(Trait == tr)
 
     table2_rows[[tr]] <- tibble(
       Trait = trait_titles_sec3[tr],
       Unit = trait_units_sec3[tr],
-      NWPZ_Baseline_Mean_SE_IQR_CLD = fmt_regime_cell("NWPZ Baseline"),
-      NWPZ_Warm_Mean_SE_IQR_CLD     = fmt_regime_cell("NWPZ Warm"),
-      Delta_Pct_NWPZ_Warm_vs_Baseline = sprintf("%+.1f%% (%s)", rel_w$Pct_Delta[1], rel_w$Signif_GLS[1]),
-      PZ_Warm_Mean_SE_IQR_CLD       = fmt_regime_cell("PZ Warm"),
-      Delta_Pct_PZ_Warm_vs_Baseline   = sprintf("%+.1f%% (%s)", rel_pw$Pct_Delta[1], rel_pw$Signif_GLS[1]),
-      PZ_Acute_Mean_SE_IQR_CLD      = fmt_regime_cell("PZ Acute"),
-      Delta_Pct_PZ_Acute_vs_Baseline  = sprintf("%+.1f%% (%s)", rel_pa$Pct_Delta[1], rel_pa$Signif_GLS[1]),
+      NWPZ_Baseline_Mean_SE_IQR_CLD    = fmt_regime_cell("NWPZ Baseline"),
+      NWPZ_Warm_Mean_SE_IQR_CLD        = fmt_regime_cell("NWPZ Warm"),
+      Delta_Pct_NWPZ_Warm_vs_Baseline  = sprintf("%+.1f%% (%s)", rel_w$Pct_Delta[1], rel_w$Signif_GLS[1]),
+      PZ_Warm_I_Mean_SE_IQR_CLD        = fmt_regime_cell("PZ Warm I"),
+      Delta_Pct_PZ_Warm_I_vs_Baseline  = sprintf("%+.1f%% (%s)", rel_pw1$Pct_Delta[1], rel_pw1$Signif_GLS[1]),
+      PZ_Warm_II_Mean_SE_IQR_CLD       = fmt_regime_cell("PZ Warm II"),
+      Delta_Pct_PZ_Warm_II_vs_Baseline = sprintf("%+.1f%% (%s)", rel_pw2$Pct_Delta[1], rel_pw2$Signif_GLS[1]),
       LMM_Omnibus_F_df              = sprintf("F(%d, %d) = %.2f", an_row$DF_num[1], round(an_row$DF_den[1]), an_row$F_stat[1]),
       Omnibus_P                     = if (an_row$p_value[1] < 0.0001) "P < 0.0001" else sprintf("P = %.4f", an_row$p_value[1]),
       Genotype_Repeatability_ICC    = round(an_row$adjusted_ICC[1], 3),
@@ -2422,6 +2504,7 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
     )
 
   write.csv(table_2_main,  file.path(sec21_dir, "Table_2_Multi_Environment_Phenotypic_and_ANOVA_Summary.csv"), row.names = FALSE)
+  utils::write.table(sanitize_df_for_export(table_2_main), file.path(sec21_dir, "Table_2_Multi_Environment_Phenotypic_and_ANOVA_Summary.txt"), sep = "\t", row.names = FALSE, quote = FALSE)
   write.csv(table_s3_supp, file.path(sec21_dir, "Table_S3_Pairwise_Regime_Contrasts_and_Heteroskedasticity.csv"), row.names = FALSE)
 
   # Export Unified Multi-Tab Excel Workbook for Section 2.1
@@ -2453,7 +2536,7 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
 
   cat("\n--- Consolidated Table 2: Multi-Environment Phenotypic & ANOVA Summary ---\n")
   print(table_2_main %>% select(Trait, NWPZ_Baseline_Mean_SE_IQR_CLD, Delta_Pct_NWPZ_Warm_vs_Baseline,
-                                Delta_Pct_PZ_Warm_vs_Baseline, Delta_Pct_PZ_Acute_vs_Baseline, LMM_Omnibus_F_df, Residual_SD_Ratio_Max_Min))
+                                Delta_Pct_PZ_Warm_I_vs_Baseline, Delta_Pct_PZ_Warm_II_vs_Baseline, LMM_Omnibus_F_df, Residual_SD_Ratio_Max_Min))
 } else {
   cat("  -> Section 3 [SKIPPED - Assets Finalized & Protected]\n")
 }
@@ -2509,8 +2592,9 @@ for (i in 6:length(k_range)) {
 sil_df <- data.frame(k = k_range, Silhouette = sil_widths)
 optimal_k <- sil_eval_df$k[which.max(sil_eval_df$Mean_Silhouette_Width)]
 max_sil_width <- max(sil_eval_df$Mean_Silhouette_Width)
+stopifnot(optimal_k == 2L)
 
-# Final K-Means using the dynamically computed optimal_k
+# Final K-Means using the dynamically computed optimal_k (verified k == 2)
 set.seed(42)
 final_km <- kmeans(traj_matrix, centers = optimal_k, nstart = 100)
 
@@ -2567,39 +2651,44 @@ assign_env_traj <- function(row_counts) {
   traj_names[which.min(dists)]
 }
 
-# Vegetative Vigor Model trained on NWPZ Baseline using centralized COUNT_AT_EMERGENCE_MAIN
+# Tillering Vigor Model (Option A): K-Means on duration-normalized Mean_Tiller_Early & Mean_Tiller_Late
+# trained on NWPZ Baseline, eliminating the mechanical 40-42 d vs 72 d window-length confound.
 if (!"Int_E_T1" %in% names(blues_df)) {
   blues_df <- blues_df %>%
-    left_join(env_metadata %>% select(Env_Name, Int_E_T1, Int_T1_T2, Int_T2_T3, Int_T3_T4), 
+    left_join(env_metadata %>% select(Env_Name, Int_E_T1, Int_T1_T2, Int_T2_T3, Int_T3_T4, Total_E_T4),
               by = c("Environment" = "Env_Name"))
 }
 
 blues_df <- blues_df %>% mutate(
-  AUTPC_Early = (0.5 * (COUNT_AT_EMERGENCE_MAIN + T1_Count) * Int_E_T1) + (0.5 * (T1_Count + T2_Count) * Int_T1_T2),
-  AUTPC_Late  = (0.5 * (T2_Count + T3_Count) * Int_T2_T3) + (0.5 * (T3_Count + T4_Count) * Int_T3_T4)
+  Dur_Early         = Int_E_T1 + Int_T1_T2,
+  Dur_Late          = Int_T2_T3 + Int_T3_T4,
+  AUTPC_Early       = (0.5 * (COUNT_AT_EMERGENCE_MAIN + T1_Count) * Int_E_T1) + (0.5 * (T1_Count + T2_Count) * Int_T1_T2),
+  AUTPC_Late        = (0.5 * (T2_Count + T3_Count) * Int_T2_T3) + (0.5 * (T3_Count + T4_Count) * Int_T3_T4),
+  Mean_Tiller_Early = AUTPC_Early / Dur_Early,
+  Mean_Tiller_Late  = AUTPC_Late  / Dur_Late
 )
 stopifnot(max(abs((blues_df$AUTPC_Early + blues_df$AUTPC_Late) - blues_df$AUTPC_From_Count_BLUEs), na.rm = TRUE) < 1e-10)
 
-base_v_mat <- as.matrix(blues_df %>% filter(Environment == "NWPZ Baseline") %>% select(AUTPC_Early, AUTPC_Late))
+base_v_df <- blues_df %>% filter(Environment == "NWPZ Baseline")
+r_early_late_base <- cor(base_v_df$Mean_Tiller_Early, base_v_df$Mean_Tiller_Late)
+cat(sprintf("  r(Mean_Tiller_Early, Mean_Tiller_Late) in NWPZ Baseline: %.4f\n", r_early_late_base))
+
+base_v_mat    <- as.matrix(base_v_df[, c("Mean_Tiller_Early", "Mean_Tiller_Late")])
 base_v_scaled <- scale(base_v_mat)
 v_center <- attr(base_v_scaled, "scaled:center")
 v_scale  <- attr(base_v_scaled, "scaled:scale")
 
 set.seed(42)
 km_vigor <- kmeans(base_v_scaled, centers = 2, nstart = 50)
-early_m <- aggregate(base_v_mat[, "AUTPC_Early"], by = list(km_vigor$cluster), FUN = mean)$x
-late_m  <- aggregate(base_v_mat[, "AUTPC_Late"],  by = list(km_vigor$cluster), FUN = mean)$x
-ratio_m <- early_m / late_m
-vigor_order <- order(ratio_m, decreasing = TRUE)
+clus_size <- tapply(base_v_df$AUTPC_From_Count_BLUEs / base_v_df$Total_E_T4, km_vigor$cluster, mean)
 vigor_names <- character(2)
-vigor_names[vigor_order[1]] <- "Early Vigor"
-vigor_names[vigor_order[2]] <- "Late Vigor"
+vigor_names[as.integer(names(which.max(clus_size)))] <- VIGOR_HI
+vigor_names[as.integer(names(which.min(clus_size)))] <- VIGOR_LO
 vigor_centers <- km_vigor$centers
 
 assign_env_vigor <- function(row_v) {
   sv <- (row_v - v_center) / v_scale
-  dists <- apply(vigor_centers, 1, function(cen) sum((sv - cen)^2))
-  vigor_names[which.min(dists)]
+  vigor_names[which.min(apply(vigor_centers, 1, function(cen) sum((sv - cen)^2)))]
 }
 
 # Strip any pre-existing classification columns for idempotency before re-joining
@@ -2619,8 +2708,10 @@ blues_df <- blues_df %>%
 blues_df$Trajectory_Realized <- apply(blues_df[, c("T1_Count", "T2_Count", "T3_Count", "T4_Count")], 1, assign_env_traj)
 blues_df$Trajectory_Realized <- factor(blues_df$Trajectory_Realized, levels = c("Earlier Proportional Peak", "Later Proportional Peak"))
 
-blues_df$Vigor_Realized <- apply(blues_df[, c("AUTPC_Early", "AUTPC_Late")], 1, assign_env_vigor)
-blues_df$Vigor_Realized <- factor(blues_df$Vigor_Realized, levels = c("Early Vigor", "Late Vigor"))
+blues_df$Vigor_Realized <- factor(
+  apply(blues_df[, c("Mean_Tiller_Early", "Mean_Tiller_Late")], 1, assign_env_vigor),
+  levels = c(VIGOR_HI, VIGOR_LO)
+)
 
 # Tiller Conversion Efficiency (TCE) classification anchored to NWPZ Baseline median
 tce_base_vals <- blues_df %>% filter(Environment == "NWPZ Baseline") %>% pull(TCE)
@@ -2700,10 +2791,13 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
         T2_rel_Mean_SD = sprintf("%.3f \u00B1 %.3f", mean(T2_rel, na.rm = TRUE), sd(T2_rel, na.rm = TRUE)),
         T3_rel_Mean_SD = sprintf("%.3f \u00B1 %.3f", mean(T3_rel, na.rm = TRUE), sd(T3_rel, na.rm = TRUE)),
         T4_Count_Mean_SD = sprintf("%.2f \u00B1 %.2f", mean(T4_Count, na.rm = TRUE), sd(T4_Count, na.rm = TRUE)),
+        Mean_Tiller_Early_Mean_SD = sprintf("%.2f \u00B1 %.2f", mean(Mean_Tiller_Early, na.rm = TRUE), sd(Mean_Tiller_Early, na.rm = TRUE)),
+        Mean_Tiller_Late_Mean_SD  = sprintf("%.2f \u00B1 %.2f", mean(Mean_Tiller_Late, na.rm = TRUE), sd(Mean_Tiller_Late, na.rm = TRUE)),
         AUTPC_Early_Mean_SD = sprintf("%.1f \u00B1 %.1f", mean(AUTPC_Early, na.rm = TRUE), sd(AUTPC_Early, na.rm = TRUE)),
         AUTPC_Late_Mean_SD  = sprintf("%.1f \u00B1 %.1f", mean(AUTPC_Late, na.rm = TRUE), sd(AUTPC_Late, na.rm = TRUE)),
         AUTPC_Total_Mean_SD = sprintf("%.1f \u00B1 %.1f", mean(AUTPC, na.rm = TRUE), sd(AUTPC, na.rm = TRUE)),
-        Early_to_Late_AUTPC_Ratio = round(mean(AUTPC_Early, na.rm = TRUE) / mean(AUTPC_Late, na.rm = TRUE), 3),
+        AUTPC_norm_Mean_SD  = sprintf("%.2f \u00B1 %.2f", mean(AUTPC_norm, na.rm = TRUE), sd(AUTPC_norm, na.rm = TRUE)),
+        Early_to_Late_Rate_Ratio = round(mean(Mean_Tiller_Early, na.rm = TRUE) / mean(Mean_Tiller_Late, na.rm = TRUE), 3),
         PT_Count_Mean_SD = sprintf("%.2f \u00B1 %.2f", mean(PT_Count, na.rm = TRUE), sd(PT_Count, na.rm = TRUE)),
         TCE_Mean_SD      = sprintf("%.3f \u00B1 %.3f", mean(TCE, na.rm = TRUE), sd(TCE, na.rm = TRUE)),
         .groups = "drop"
@@ -2716,7 +2810,8 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
       select(
         Classification_Dimension, Class_Name, Size_n, Percentage,
         T1_rel_Mean_SD, T2_rel_Mean_SD, T3_rel_Mean_SD, T4_Count_Mean_SD,
-        AUTPC_Early_Mean_SD, AUTPC_Late_Mean_SD, AUTPC_Total_Mean_SD, Early_to_Late_AUTPC_Ratio,
+        Mean_Tiller_Early_Mean_SD, Mean_Tiller_Late_Mean_SD,
+        AUTPC_Early_Mean_SD, AUTPC_Late_Mean_SD, AUTPC_Total_Mean_SD, AUTPC_norm_Mean_SD, Early_to_Late_Rate_Ratio,
         PT_Count_Mean_SD, TCE_Mean_SD, Partition_Rule_and_Validity
       )
   }
@@ -2737,9 +2832,9 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
     ),
     summarize_typology_group(
       base_full_df,
-      "Vegetative Vigor (K-Means on AUTPC_Early, AUTPC_Late)",
+      "Tillering Vigor (K-Means on Mean_Tiller_Early, Mean_Tiller_Late)",
       "Vigor_Realized",
-      sprintf("Unsupervised K-Means on Early (0-42 DAE) vs Late (42-72 DAE) AUTPC in NWPZ Baseline (k = 2 Silhouette = %.3f; Early Vigor = higher Early/Late ratio & lower cumulative AUTPC)", sil_vigor_k2)
+      sprintf("Unsupervised K-Means on duration-normalized Mean_Tiller_Early & Mean_Tiller_Late in NWPZ Baseline (r = %.3f; k = 2 Silhouette = %.3f; %s = higher daily tillering rate AUTPC/Total_E_T4)", r_early_late_base, sil_vigor_k2, VIGOR_HI)
     ),
     summarize_typology_group(
       base_full_df,
@@ -2767,11 +2862,18 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
     n_tot <- nrow(w_df)
     rows_out <- list()
 
-    for (env in c("NWPZ Warm", "PZ Warm", "PZ Acute")) {
+    # Also compute within-PZ (PZ Warm I -> PZ Warm II) contrast for Vigor context
+    tb_pz_within <- table(
+      PZ1 = factor(w_df$`PZ Warm I`, levels = c(lvl1, lvl2)),
+      PZ2 = factor(w_df$`PZ Warm II`, levels = c(lvl1, lvl2))
+    )
+    m_pz_within <- mcnemar.test(tb_pz_within, correct = TRUE)
+
+    for (env in c("NWPZ Warm", "PZ Warm I", "PZ Warm II")) {
       trans_scope <- if (env == "NWPZ Warm") {
         "Within-Site Randomized Incomplete-Block Contrast (NWPZ Delhi)"
       } else {
-        "Cross-Zone Agro-Climatic & Unrandomized Duplicated-Order Contrast (NWPZ vs PZ)"
+        "Cross-Zone Agro-Climatic & Unrandomized Duplicated-Order Contrast (NWPZ vs PZ; Site Confounded with Heat)"
       }
 
       tb <- table(
@@ -2779,6 +2881,8 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
         Stress   = factor(w_df[[env]], levels = c(lvl1, lvl2))
       )
       m_test <- mcnemar.test(tb, correct = TRUE)
+      n_disc <- as.integer(tb[lvl1, lvl2] + tb[lvl2, lvl1])
+      exact_binom_p <- if (n_disc > 0L) binom.test(as.integer(tb[lvl1, lvl2]), n_disc)$p.value else 1.0
 
       n11 <- as.integer(tb[lvl1, lvl1]) # Retained Class 1
       n12 <- as.integer(tb[lvl1, lvl2]) # Shifted Class 1 -> Class 2
@@ -2801,41 +2905,31 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
       pct_1_to_2 <- if (b1_n > 0) 100 * n12 / b1_n else 0.0
       pct_2_to_1 <- if (b2_n > 0) 100 * n21 / b2_n else 0.0
 
-      bio_infer <- if (grepl("^Tillering Trajectory", dim_label)) {
-        sprintf(
-          "%s vs Baseline: %.1f%% (%d/%d) shifted %s -> %s; %.1f%% (%d/%d) shifted %s -> %s (Net %s: %+.1f%%; \u03C7\u00B2 = %.2f, %s).",
-          env, pct_1_to_2, n12, b1_n, lvl1, lvl2, pct_2_to_1, n21, b2_n, lvl2, lvl1, lvl1, net_shift, m_test$statistic, format_p_stat(m_test$p.value)
-        )
-      } else if (grepl("^Vegetative Vigor", dim_label)) {
-        if (env == "NWPZ Warm") {
-          sprintf(
-            "Within-NWPZ early sowing preserves baseline vigor balance (%.1f%% vs %.1f%% %s; %d shifted Early->Late, %d Late->Early; \u03C7\u00B2 = %.2f, %s).",
-            s1_pct, b1_pct, lvl1, n12, n21, m_test$statistic, format_p_stat(m_test$p.value)
-          )
-        } else {
-          sprintf(
-            "Compressed PZ vegetative window (40-42 d vs 72 d) reduces cumulative AUTPC across all genotypes, assigning %.1f%% (%d/%d) of %s genotypes to the lower-magnitude %s centroid (\u03C7\u00B2 = %.2f, %s).",
-            pct_2_to_1, n21, b2_n, lvl2, lvl1, m_test$statistic, format_p_stat(m_test$p.value)
-          )
-        }
+      # Data-driven branching on significance and sign of net_shift (Item 7)
+      dir_phrase <- if (m_test$p.value >= 0.05) {
+        sprintf("No statistically significant regime shift in %s", lvl1)
+      } else if (net_shift > 0) {
+        sprintf("Significant net expansion of %s (%+.1f%%)", lvl1, net_shift)
       } else {
-        if (env == "NWPZ Warm") {
-          sprintf(
-            "Moderate early warming in NWPZ increases conversion efficiency: %.1f%% (%d/%d) of %s genotypes shift to %s, raising %s to %.1f%% (\u03C7\u00B2 = %.2f, %s).",
-            pct_2_to_1, n21, b2_n, lvl2, lvl1, lvl1, s1_pct, m_test$statistic, format_p_stat(m_test$p.value)
-          )
-        } else if (env == "PZ Warm") {
-          sprintf(
-            "Chronic tropical heat degrades tiller survival: %.1f%% (%d/%d) of %s genotypes drop to %s, reducing %s to %.1f%% (\u03C7\u00B2 = %.2f, %s).",
-            pct_1_to_2, n12, b1_n, lvl1, lvl2, lvl1, s1_pct, m_test$statistic, format_p_stat(m_test$p.value)
-          )
-        } else {
-          sprintf(
-            "Acute vegetative heat shock triggers severe conversion collapse: %.1f%% (%d/%d) of %s genotypes collapse to %s, leaving only %.1f%% in %s (\u03C7\u00B2 = %.2f, %s).",
-            pct_1_to_2, n12, b1_n, lvl1, lvl2, s1_pct, lvl1, m_test$statistic, format_p_stat(m_test$p.value)
-          )
-        }
+        sprintf("Significant net reduction of %s (%+.1f%%)", lvl1, net_shift)
       }
+
+      site_note <- if (env == "NWPZ Warm") {
+        "[Within-Delhi randomized contrast]"
+      } else if (env == "PZ Warm II" && grepl("Vigor", dim_label)) {
+        sprintf("[Cross-zone vs Delhi centroids; within-Dharwad PZ Warm I -> II drops %.1f%% -> %.1f%%, McNemar p = %.2e]",
+                100 * sum(w_df$`PZ Warm I` == lvl1) / n_tot, s1_pct, m_pz_within$p.value)
+      } else {
+        "[Cross-zone vs Delhi centroids; site & layout confounded with thermal regime]"
+      }
+
+      bio_infer <- sprintf(
+        "%s (%s vs Baseline: %.1f%% -> %.1f%% %s; %d shifted %s->%s [%.1f%%], %d shifted %s->%s [%.1f%%]; \u03C7\u00B2 = %.2f, %s) %s",
+        dir_phrase, env, b1_pct, s1_pct, lvl1,
+        n12, lvl1, lvl2, pct_1_to_2,
+        n21, lvl2, lvl1, pct_2_to_1,
+        m_test$statistic, format_p_stat(m_test$p.value), site_note
+      )
 
       rows_out[[length(rows_out) + 1]] <- data.frame(
         Classification_Dimension   = dim_label,
@@ -2856,6 +2950,7 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
         McNemar_Chi_Square         = round(as.numeric(m_test$statistic), 2),
         df                         = as.integer(m_test$parameter),
         p_value                    = m_test$p.value,
+        Exact_Binom_p              = exact_binom_p,
         Significance               = sig_lbl,
         Biological_Inference       = bio_infer,
         stringsAsFactors           = FALSE
@@ -2870,14 +2965,24 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
       "Trajectory_Realized", "Earlier Proportional Peak", "Later Proportional Peak"
     ),
     build_unified_transition_rows(
-      "Vegetative Vigor (AUTPC Early vs. Late)",
-      "Vigor_Realized", "Early Vigor", "Late Vigor"
+      "Tillering Vigor (Mean Tillering Rate Early vs. Late)",
+      "Vigor_Realized", VIGOR_HI, VIGOR_LO
     ),
     build_unified_transition_rows(
       "Tiller Conversion Efficiency (TCE = PT/T4)",
       "Realized_TCE", "High Conversion", "Low Conversion"
     )
-  )
+  ) %>%
+    mutate(
+      p_Holm = p.adjust(p_value, method = "holm"),
+      Significance_Holm = case_when(
+        p_Holm < 0.001 ~ "***",
+        p_Holm < 0.01  ~ "**",
+        p_Holm < 0.05  ~ "*",
+        TRUE           ~ "ns"
+      )
+    ) %>%
+    relocate(p_Holm, Significance_Holm, .after = Significance)
 
   write.csv(
     table_3_transitions,
@@ -3044,11 +3149,17 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
     ) +
     pub_theme +
     theme(
-      plot.subtitle = element_text(size = 9.3, color = "grey25", face = "bold", lineheight = 1.1)
+      plot.title = element_text(face = "bold", size = 13.5),
+      plot.subtitle = element_text(size = 9.8, color = "grey25", face = "bold", lineheight = 1.1),
+      axis.title = element_text(face = "bold", size = 11.5),
+      axis.text = element_text(face = "bold", size = 10.5, color = "black"),
+      legend.title = element_text(face = "bold", size = 11.8),
+      legend.text = element_text(face = "bold", size = 11.4),
+      legend.key.size = unit(0.65, "cm")
     ) +
     labs(
       title = "A. Unsupervised Tillering Trajectory Typology in NWPZ Baseline (N = 200)",
-      subtitle = "Genotype-normalized progression (T_i / T4) isolates developmental curve geometry from absolute plant size (ribbons = IQR; error bars = \u00B11 SD)",
+      subtitle = "Genotype-normalized progression (T_i / T4; ribbons = IQR, error bars = \u00B11 SD)",
       x = "Vegetative Developmental Milestone (Normalized to Terminal T4 Count)",
       y = "Proportional Tiller Accumulation (T_i / T4, %)"
     )
@@ -3086,34 +3197,34 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
     geom_hline(yintercept = 0, linetype = "dotted", color = "grey55", linewidth = 0.5) +
     geom_vline(xintercept = 0, linetype = "dotted", color = "grey55", linewidth = 0.5) +
     stat_ellipse(geom = "polygon", alpha = 0.16, level = 0.90, show.legend = FALSE) +
-    geom_point(size = 2.4, alpha = 0.72, shape = 21, stroke = 0.4, color = "black") +
+    geom_point(size = 2.5, alpha = 0.75, shape = 21, stroke = 0.4, color = "black") +
     geom_segment(
       data = load_df,
       aes(x = 0, y = 0, xend = xend, yend = yend),
       inherit.aes = FALSE,
-      arrow = arrow(length = unit(0.20, "cm"), type = "closed"),
-      color = "grey15", linewidth = 0.75
+      arrow = arrow(length = unit(0.22, "cm"), type = "closed"),
+      color = "grey15", linewidth = 0.80
     ) +
     geom_label(
       data = load_df,
       aes(x = xlab, y = ylab, label = Variable),
       inherit.aes = FALSE,
-      size = 2.9, fontface = "bold", fill = "white", alpha = 0.88, label.size = 0.2, color = "grey10"
+      size = 3.15, fontface = "bold", fill = "white", alpha = 0.90, label.size = 0.25, color = "grey10"
     ) +
     geom_errorbar(
       data = pca_centroids,
       aes(x = m_PC1, ymin = m_PC2 - ci_PC2, ymax = m_PC2 + ci_PC2),
-      inherit.aes = FALSE, color = "black", width = 0.12, linewidth = 0.8
+      inherit.aes = FALSE, color = "black", width = 0.12, linewidth = 0.85
     ) +
-    geom_errorbarh(
+    geom_errorbar(
       data = pca_centroids,
       aes(y = m_PC2, xmin = m_PC1 - ci_PC1, xmax = m_PC1 + ci_PC1),
-      inherit.aes = FALSE, color = "black", width = 0.12, linewidth = 0.8
+      inherit.aes = FALSE, color = "black", width = 0.12, linewidth = 0.85, orientation = "y"
     ) +
     geom_point(
       data = pca_centroids,
       aes(x = m_PC1, y = m_PC2, fill = Trajectory),
-      inherit.aes = FALSE, shape = 23, size = 4.5, stroke = 1.0, color = "black", show.legend = FALSE
+      inherit.aes = FALSE, shape = 23, size = 4.6, stroke = 1.0, color = "black", show.legend = FALSE
     ) +
     scale_color_manual(values = traj_pal, name = "Baseline K-Means Trajectory Typology:") +
     scale_fill_manual(values = traj_pal, name = "Baseline K-Means Trajectory Typology:") +
@@ -3121,12 +3232,18 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
     scale_y_continuous(expand = expansion(mult = c(0.10, 0.12))) +
     pub_theme +
     theme(
-      plot.subtitle = element_text(size = 9.3, color = "grey25", face = "bold", lineheight = 1.1)
+      plot.title = element_text(face = "bold", size = 13.5),
+      plot.subtitle = element_text(size = 9.8, color = "grey25", face = "bold", lineheight = 1.1),
+      axis.title = element_text(face = "bold", size = 11.5),
+      axis.text = element_text(face = "bold", size = 10.5, color = "black"),
+      legend.title = element_text(face = "bold", size = 11.8),
+      legend.text = element_text(face = "bold", size = 11.4),
+      legend.key.size = unit(0.65, "cm")
     ) +
     labs(
       title = "B. PCA Biplot of Trajectory Geometry & Silhouette Cluster Optimization",
       subtitle = sprintf(
-        "PC1 + PC2 explain %.1f%% of shape variance (90%% ellipses & \u00B195%% CI centroids) | Silhouette optimum k = %d (width = %.3f)",
+        "PC1 + PC2 explain %.1f%% variance (90%% ellipses & \u00B195%% CI centroids) | Silhouette k = %d (width = %.3f)",
         pca_var[1] + pca_var[2], optimal_k, max_sil_width
       ),
       x = pc1_lab,
@@ -3135,26 +3252,26 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
 
   # Compact Silhouette Optimization Inset (k = 2..10) embedded cleanly in upper-right of Panel B
   p_sil_inset <- ggplot(sil_df, aes(x = k, y = Silhouette)) +
-    geom_vline(xintercept = optimal_k, linetype = "dashed", color = "#DC0000", linewidth = 0.55) +
-    geom_line(color = "#3C5488", linewidth = 0.85) +
+    geom_vline(xintercept = optimal_k, linetype = "dashed", color = "#DC0000", linewidth = 0.60) +
+    geom_line(color = "#3C5488", linewidth = 0.90) +
     geom_point(aes(color = k == optimal_k, size = k == optimal_k), show.legend = FALSE) +
     scale_color_manual(values = c("TRUE" = "#DC0000", "FALSE" = "#3C5488")) +
-    scale_size_manual(values = c("TRUE" = 2.6, "FALSE" = 1.7)) +
+    scale_size_manual(values = c("TRUE" = 2.8, "FALSE" = 1.8)) +
     annotate(
       "text", x = optimal_k + 0.35, y = max_sil_width - 0.004,
       label = sprintf("k = %d (%.3f)", optimal_k, max_sil_width),
-      hjust = 0, size = 2.65, fontface = "bold", color = "#DC0000"
+      hjust = 0, size = 2.95, fontface = "bold", color = "#DC0000"
     ) +
     scale_x_continuous(breaks = seq(2, 10, by = 2)) +
     scale_y_continuous(limits = c(0.22, 0.35), breaks = c(0.24, 0.28, 0.32)) +
-    theme_bw(base_size = 8.5) +
+    theme_bw(base_size = 9.0) +
     theme(
       panel.grid.minor = element_blank(),
       panel.background = element_rect(fill = "white", color = "grey30", linewidth = 0.4),
-      plot.background  = element_rect(fill = alpha("white", 0.92), color = "grey40", linewidth = 0.4),
-      plot.title       = element_text(face = "bold", size = 8.2, hjust = 0.5, margin = margin(b = 2)),
-      axis.title       = element_text(face = "bold", size = 7.8),
-      axis.text        = element_text(color = "black", size = 7.2),
+      plot.background  = element_rect(fill = alpha("white", 0.94), color = "grey40", linewidth = 0.4),
+      plot.title       = element_text(face = "bold", size = 8.8, hjust = 0.5, margin = margin(b = 2)),
+      axis.title       = element_text(face = "bold", size = 8.3),
+      axis.text        = element_text(color = "black", size = 7.8, face = "bold"),
       plot.margin      = margin(3, 4, 3, 4)
     ) +
     labs(title = "Silhouette Validity (k = 2..10)", x = "Clusters (k)", y = "Mean Width")
@@ -3258,41 +3375,54 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
       geom_text(
         data = bars_df %>% filter(pct >= 6.0),
         aes(x = x_idx, y = ymid, label = sprintf("%.1f%%", pct)),
-        color = "white", fontface = "bold", size = 3.45
+        color = "white", fontface = "bold", size = 3.95
       ) +
       scale_fill_manual(values = pal_vals, name = legend_title) +
       scale_x_continuous(breaks = 1:4, labels = envs, expand = expansion(mult = c(0.05, 0.05))) +
       scale_y_continuous(labels = function(x) paste0(x, "%"), limits = c(0, 103), expand = c(0, 0)) +
       pub_theme +
       theme(
-        axis.text.x = element_text(angle = 20, hjust = 1, face = "bold"),
-        plot.subtitle = element_text(size = 8.8, color = "grey25", face = "bold", lineheight = 1.12)
+        plot.title = element_text(face = "bold", size = 13.0),
+        axis.text.x = element_text(angle = 18, hjust = 1, face = "bold", size = 10.8, color = "black"),
+        axis.text.y = element_text(face = "bold", size = 10.4, color = "black"),
+        axis.title.y = element_text(face = "bold", size = 11.4, color = "black"),
+        plot.subtitle = element_text(size = 9.2, color = "grey20", face = "bold", lineheight = 1.1),
+        legend.title = element_text(face = "bold", size = 11.5),
+        legend.text = element_text(face = "bold", size = 11.0),
+        legend.key.size = unit(0.65, "cm"),
+        plot.margin = margin(t = 6, r = 8, b = 4, l = 8)
       ) +
       labs(title = panel_title, subtitle = sub_text, x = "", y = "Genotype Composition (%)")
   }
 
   trj_rows <- table_3_transitions %>% filter(Classification_Dimension == "Tillering Trajectory Shape (K-Means)")
-  vig_rows <- table_3_transitions %>% filter(Classification_Dimension == "Vegetative Vigor (AUTPC Early vs. Late)")
+  vig_rows <- table_3_transitions %>% filter(Classification_Dimension == "Tillering Vigor (Mean Tillering Rate Early vs. Late)")
   tce_rows <- table_3_transitions %>% filter(Classification_Dimension == "Tiller Conversion Efficiency (TCE = PT/T4)")
 
   sub_trj_alluv <- sprintf(
-    "McNemar vs Baseline: NWPZ Warm \u03C7\u00B2 = %.2f%s | PZ Warm \u03C7\u00B2 = %.2f%s | PZ Acute \u03C7\u00B2 = %.2f%s",
+    "McNemar vs. Baseline: NWPZ Warm \u03C7\u00B2=%.1f%s | PZ Warm I \u03C7\u00B2=%.1f%s | PZ Warm II \u03C7\u00B2=%.1f%s",
     trj_rows$McNemar_Chi_Square[1], trj_rows$Significance[1],
     trj_rows$McNemar_Chi_Square[2], trj_rows$Significance[2],
     trj_rows$McNemar_Chi_Square[3], trj_rows$Significance[3]
   )
+  # Compute within-PZ McNemar (PZ Warm I -> PZ Warm II) to highlight unconfounded within-site thermal contrast
+  w_pz_vig <- blues_df %>%
+    filter(Environment %in% c("PZ Warm I", "PZ Warm II")) %>%
+    select(Genotype, Environment, Vigor_Realized) %>%
+    pivot_wider(names_from = Environment, values_from = Vigor_Realized)
+  mc_pz_vig <- mcnemar.test(table(w_pz_vig$`PZ Warm I`, w_pz_vig$`PZ Warm II`), correct = TRUE)
+  sig_pz_vig <- if (mc_pz_vig$p.value < 0.001) "***" else if (mc_pz_vig$p.value < 0.01) "**" else if (mc_pz_vig$p.value < 0.05) "*" else "ns"
+
   sub_vig_alluv <- sprintf(
-    "McNemar vs Baseline: NWPZ Warm \u03C7\u00B2 = %.2f (%s) | PZ Warm \u03C7\u00B2 = %.2f%s | PZ Acute \u03C7\u00B2 = %.2f%s\n(In PZ, 40\u201342 d thermal window compresses raw AUTPC into the lower-magnitude Early Vigor centroid)",
+    "Within-Site McNemar: NWPZ Warm vs. Base \u03C7\u00B2=%.1f (%s) | PZ Warm II vs. I \u03C7\u00B2=%.1f (%s)",
     vig_rows$McNemar_Chi_Square[1], vig_rows$Significance[1],
-    vig_rows$McNemar_Chi_Square[2], vig_rows$Significance[2],
-    vig_rows$McNemar_Chi_Square[3], vig_rows$Significance[3]
+    as.numeric(mc_pz_vig$statistic), sig_pz_vig
   )
   sub_tce_alluv <- sprintf(
-    "McNemar vs Baseline: NWPZ Warm \u03C7\u00B2 = %.2f%s | PZ Warm \u03C7\u00B2 = %.2f%s | PZ Acute \u03C7\u00B2 = %.2f%s\n(Baseline Median Split: High Conversion TCE \u2265 %.3f vs. Low Conversion TCE < %.3f)",
+    "McNemar vs. Base: NWPZ Warm \u03C7\u00B2=%.1f%s | PZ Warm I \u03C7\u00B2=%.1f%s | PZ Warm II \u03C7\u00B2=%.1f%s",
     tce_rows$McNemar_Chi_Square[1], tce_rows$Significance[1],
     tce_rows$McNemar_Chi_Square[2], tce_rows$Significance[2],
-    tce_rows$McNemar_Chi_Square[3], tce_rows$Significance[3],
-    tce_cutoff, tce_cutoff
+    tce_rows$McNemar_Chi_Square[3], tce_rows$Significance[3]
   )
 
   p_panel_c <- build_alluvial_transition_panel(
@@ -3302,9 +3432,9 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
   )
 
   p_panel_d <- build_alluvial_transition_panel(
-    blues_df, "Vigor_Realized", "Early Vigor", "Late Vigor",
-    c("Early Vigor" = "#E64B35", "Late Vigor" = "#00A087"),
-    "D. Vegetative Vigor Shifts (AUTPC)", sub_vig_alluv, "Vigor Class:"
+    blues_df, "Vigor_Realized", VIGOR_HI, VIGOR_LO,
+    setNames(c("#E64B35", "#00A087"), c(VIGOR_HI, VIGOR_LO)),
+    "D. Tillering Vigor Shifts (K-Means Rate)", sub_vig_alluv, "Vigor Class:"
   )
 
   p_panel_e <- build_alluvial_transition_panel(
@@ -3313,14 +3443,20 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
     "E. Tiller Conversion Efficiency (TCE)", sub_tce_alluv, "TCE Class:"
   )
 
-  top_row_sec22 <- (p_panel_a | p_panel_b) + plot_layout(widths = c(1.12, 0.98))
+  top_row_sec22 <- (p_panel_a | p_panel_b) +
+    plot_layout(widths = c(1.12, 0.98), guides = "collect") &
+    theme(legend.position = "bottom")
   bot_row_sec22 <- (p_panel_c | p_panel_d | p_panel_e)
 
   compound_transitions <- (top_row_sec22 / bot_row_sec22) +
     plot_layout(heights = c(1.08, 1.0)) +
     plot_annotation(
-      caption = "Panels A\u2013B define the unsupervised K-Means tillering trajectory typology in the NWPZ Baseline reference (N = 200). Panels C\u2013E show realized genotype class proportions (stacked bars)\nand individual genotype transitions (Hermite alluvial ribbons, N = 200) across the four thermal regimes. Vertical dashed line separates NWPZ (Delhi) and PZ (Dharwad).",
-      theme = theme(plot.caption = element_text(size = 9.5, color = "grey30", face = "italic", hjust = 0, lineheight = 1.15))
+      caption = paste0(
+        "Panels A\u2013B define the unsupervised 3D K-Means tillering trajectory typology in the NWPZ Baseline reference (N = 200). Panels C\u2013E show realized genotype class proportions (stacked bars) and transitions (Hermite alluvial ribbons, N = 200).\n",
+        "Note on Cluster Validation: Silhouette width optimization applies to multivariate K-Means typologies\u2014Trajectory Geometry (3D: T1/T4, T2/T4, T3/T4; k = 2 silhouette = 0.331, Panel B inset) and Tillering Vigor (2D early vs. late rates;\n",
+        "k = 2 silhouette = 0.465, Table S4)\u2014whereas TCE (PT/T4) is a 1D ratio partitioned at the NWPZ Baseline median (79.0%)."
+      ),
+      theme = theme(plot.caption = element_text(size = 9.6, color = "grey25", face = "italic", hjust = 0, lineheight = 1.15))
     )
 
   ggsave(
@@ -3354,33 +3490,40 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
 # ==============================================================================
 cat(">>> Executing Section 5: Micro-Phenology Indices (AUTPC & TSI)...\n")
 
-# 5.1 Calculate Tiller Stability Index (TSI) & Within-Delhi Randomized TSI_Delhi
+# 5.1 Calculate Tiller Stability Index (TSI_PZ_WarmII) & Within-Delhi Randomized TSI_Delhi
 opt_counts      <- blues_df %>% filter(Environment == "NWPZ Baseline") %>% select(Genotype, PT_Opt = PT_Count)
-stress_counts   <- blues_df %>% filter(Environment == "PZ Acute")      %>% select(Genotype, PT_Stress = PT_Count)
+stress_counts   <- blues_df %>% filter(Environment == "PZ Warm II")    %>% select(Genotype, PT_Stress = PT_Count)
 del_warm_counts <- blues_df %>% filter(Environment == "NWPZ Warm")     %>% select(Genotype, PT_DelWarm = PT_Count)
 
-pop_PT_Acute   <- mean(stress_counts$PT_Stress, na.rm = TRUE)
+pop_PT_Warm_II <- mean(stress_counts$PT_Stress, na.rm = TRUE)
 pop_PT_DelWarm <- mean(del_warm_counts$PT_DelWarm, na.rm = TRUE)
 
 tsi_df <- opt_counts %>%
   inner_join(stress_counts, by = "Genotype") %>%
   inner_join(del_warm_counts, by = "Genotype") %>%
   mutate(
-    TSI = if_else(PT_Opt <= 0 | pop_PT_Acute <= 0 | is.na(PT_Opt) | is.na(pop_PT_Acute),
-                  NA_real_,
-                  (PT_Stress / PT_Opt) * (PT_Stress / pop_PT_Acute)),
-    Stability = if_else(TSI >= 1.0, "Stable", "Contrasting"),
+    TSI_PZ_WarmII = if_else(PT_Opt <= 0 | pop_PT_Warm_II <= 0 | is.na(PT_Opt) | is.na(pop_PT_Warm_II),
+                            NA_real_,
+                            (PT_Stress / PT_Opt) * (PT_Stress / pop_PT_Warm_II)),
+    Stability = if_else(TSI_PZ_WarmII >= 1.0, "Stable", "Contrasting"),
     Retention_Ratio = if_else(PT_Opt <= 0 | is.na(PT_Opt), NA_real_, PT_Stress / PT_Opt),
+    Retention_Resid = as.numeric(residuals(lm(PT_Stress ~ PT_Opt))),
     TSI_Delhi = if_else(PT_Opt <= 0 | pop_PT_DelWarm <= 0 | is.na(PT_Opt) | is.na(pop_PT_DelWarm),
                         NA_real_,
                         (PT_DelWarm / PT_Opt) * (PT_DelWarm / pop_PT_DelWarm)),
-    Stability_Delhi = if_else(TSI_Delhi >= 1.0, "Stable", "Contrasting")
+    Stability_Delhi = if_else(TSI_Delhi >= 1.0, "Stable", "Contrasting"),
+    Retention_Resid_Delhi = as.numeric(residuals(lm(PT_DelWarm ~ PT_Opt)))
   )
 
 # Strip pre-existing TSI columns for idempotency before joining
 blues_df <- blues_df %>%
-  select(-any_of(c("TSI", "Stability", "TSI_Delhi", "Stability_Delhi"))) %>%
-  left_join(tsi_df %>% select(Genotype, TSI, Stability, TSI_Delhi, Stability_Delhi), by = "Genotype")
+  select(-any_of(c("TSI", "TSI_PZ_WarmII", "Stability", "TSI_Delhi", "Stability_Delhi",
+                   "Retention_Resid", "Retention_Resid_Delhi"))) %>%
+  left_join(
+    tsi_df %>% select(Genotype, TSI_PZ_WarmII, Stability, TSI_Delhi, Stability_Delhi,
+                      Retention_Resid, Retention_Resid_Delhi),
+    by = "Genotype"
+  )
 
 if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   sec23_dir <- file.path(assets_dir, "Section_2.3_Phenology_Indices")
@@ -3426,10 +3569,10 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   }
 
   # ----------------------------------------------------------------------------
-  # 5.1b Multi-Stress Progression of TSI Across NWPZ Warm, PZ Warm, and PZ Acute
+  # 5.1b Multi-Stress Progression of TSI Across NWPZ Warm, PZ Warm I, and PZ Warm II
   # ----------------------------------------------------------------------------
   tsi_mult_list <- list()
-  for (env in c("NWPZ Warm", "PZ Warm", "PZ Acute")) {
+  for (env in c("NWPZ Warm", "PZ Warm I", "PZ Warm II")) {
     str_sub <- blues_df %>%
       filter(Environment == env) %>%
       select(Genotype, PT_Stress = PT_Count, Yield_Stress = GrainYld, Field_Pos_Block = Field_Pos_Block_Diagnostic)
@@ -3451,7 +3594,7 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   }
   tsi_multi_df <- bind_rows(tsi_mult_list) %>%
     mutate(
-      Env_Factor = factor(Environment, levels = c("NWPZ Warm", "PZ Warm", "PZ Acute")),
+      Env_Factor = factor(Environment, levels = c("NWPZ Warm", "PZ Warm I", "PZ Warm II")),
       Stability_Class = factor(Stability_Class, levels = c("Stable (\u2265 1.0)", "Contrasting (< 1.0)"))
     )
 
@@ -3461,9 +3604,9 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
     pivot_wider(names_from = Environment, values_from = Stability_Class)
 
   tsi_transition_pairs <- list(
-    c("NWPZ Warm", "PZ Warm"),
-    c("PZ Warm", "PZ Acute"),
-    c("NWPZ Warm", "PZ Acute")
+    c("NWPZ Warm", "PZ Warm I"),
+    c("PZ Warm I", "PZ Warm II"),
+    c("NWPZ Warm", "PZ Warm II")
   )
   table_s6a_rows <- list()
   for (pr in tsi_transition_pairs) {
@@ -3512,8 +3655,8 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
       McNemar_Significance          = sig_m,
       Target_TSI_Yield_r_Unadj      = round(as.numeric(ct_e2$estimate), 3),
       Target_TSI_Yield_p_Unadj      = ct_e2$p.value,
-      Target_TSI_Yield_r_PosAdj     = round(r_adj_e2, 3),
-      Target_TSI_Yield_p_PosAdj     = p_adj_e2,
+      Target_TSI_Yield_r_PosAdj     = ifelse(is.na(r_adj_e2), "\u2014", as.character(round(r_adj_e2, 3))),
+      Target_TSI_Yield_p_PosAdj     = ifelse(is.na(p_adj_e2), "\u2014", as.character(signif(p_adj_e2, 4))),
       Biological_Inference          = sprintf(
         "%s -> %s: Aggregate Stable proportion shifts %.1f%% -> %.1f%% (\u03C7\u00B2 = %.2f, %s), with %d genotypes re-ranking (%d collapse, %d compensate).",
         e1, e2, 100 * (n11 + n12) / n_tot, 100 * (n11 + n21) / n_tot, m_tst$statistic, sig_m, n12 + n21, n12, n21
@@ -3532,21 +3675,21 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
       by = "Genotype"
     ) %>%
     left_join(
-      tsi_multi_df %>% filter(Environment == "PZ Warm") %>%
-        select(Genotype, PT_PZ_Warm = PT_Stress, Yield_PZ_Warm = Yield_Stress,
-               TSI_PZ_Warm = TSI, Class_PZ_Warm = Stability_Class),
+      tsi_multi_df %>% filter(Environment == "PZ Warm I") %>%
+        select(Genotype, PT_PZ_Warm_I = PT_Stress, Yield_PZ_Warm_I = Yield_Stress,
+               TSI_PZ_Warm_I = TSI, Class_PZ_Warm_I = Stability_Class),
       by = "Genotype"
     ) %>%
     left_join(
-      tsi_multi_df %>% filter(Environment == "PZ Acute") %>%
-        select(Genotype, PT_PZ_Acute = PT_Stress, Yield_PZ_Acute = Yield_Stress,
-               Retention_Ratio_Acute = Retention_Ratio, TSI_PZ_Acute = TSI, Class_PZ_Acute = Stability_Class),
+      tsi_multi_df %>% filter(Environment == "PZ Warm II") %>%
+        select(Genotype, PT_PZ_Warm_II = PT_Stress, Yield_PZ_Warm_II = Yield_Stress,
+               Retention_Ratio_PZ_Warm_II = Retention_Ratio, TSI_PZ_Warm_II = TSI, Class_PZ_Warm_II = Stability_Class),
       by = "Genotype"
     ) %>%
     mutate(
-      across(c(PT_Opt, PT_NWPZ_Warm, PT_PZ_Warm, PT_PZ_Acute), ~ round(.x, 2)),
-      across(c(Yield_NWPZ_Warm, Yield_PZ_Warm, Yield_PZ_Acute, Retention_Ratio_Acute,
-               TSI_NWPZ_Warm, TSI_PZ_Warm, TSI_PZ_Acute), ~ round(.x, 3))
+      across(c(PT_Opt, PT_NWPZ_Warm, PT_PZ_Warm_I, PT_PZ_Warm_II), ~ round(.x, 2)),
+      across(c(Yield_NWPZ_Warm, Yield_PZ_Warm_I, Yield_PZ_Warm_II, Retention_Ratio_PZ_Warm_II,
+               TSI_NWPZ_Warm, TSI_PZ_Warm_I, TSI_PZ_Warm_II), ~ round(.x, 3))
     )
 
   write.csv(
@@ -3556,8 +3699,98 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   )
 
   # ----------------------------------------------------------------------------
+  # 5.1c Out-of-Sample Cross-Validation & Meng-Rosenthal-Rubin Delta-r Benchmark
+  #      (Item 8: Demonstrate that TSI is a descriptive within-regime retention index
+  #       with |r| <= 0.11 out-of-sample, and test residual-based retention)
+  # ----------------------------------------------------------------------------
+  meng_z_test <- function(y, x1, x2) {
+    n <- length(y)
+    r1 <- cor(y, x1); r2 <- cor(y, x2); r12 <- cor(x1, x2)
+    z1 <- atanh(r1); z2 <- atanh(r2)
+    rm2 <- (r1^2 + r2^2) / 2
+    f <- min((1 - r12) / (2 * (1 - rm2)), 1)
+    h <- (1 - f * rm2) / (1 - rm2)
+    z_stat <- (z1 - z2) * sqrt((n - 3) / (2 * (1 - r12) * h))
+    p_val  <- 2 * pnorm(-abs(z_stat))
+    set.seed(42)
+    b_diffs <- replicate(2000, {
+      idx <- sample.int(n, n, replace = TRUE)
+      cor(y[idx], x1[idx]) - cor(y[idx], x2[idx])
+    })
+    ci_95 <- quantile(b_diffs, c(0.025, 0.975), na.rm = TRUE)
+    list(r_tsi = r1, r_pt = r2, r_tsi_pt = r12, delta_r = r1 - r2,
+         ci_lo = as.numeric(ci_95[1]), ci_hi = as.numeric(ci_95[2]),
+         meng_z = z_stat, meng_p = p_val)
+  }
+
+  yld_by_env <- blues_df %>%
+    select(Genotype, Environment, GrainYld, PT_Count) %>%
+    pivot_wider(names_from = Environment, values_from = c(GrainYld, PT_Count))
+
+  oos_df <- tsi_df %>%
+    left_join(yld_by_env, by = "Genotype")
+
+  oos_rows <- list()
+  add_oos_row <- function(pred_name, train_env, test_env, val_type, x_vec, y_vec, pt_bench_vec = NULL) {
+    ct <- cor.test(x_vec, y_vec)
+    if (!is.null(pt_bench_vec)) {
+      mz <- meng_z_test(y_vec, x_vec, pt_bench_vec)
+      dr_str <- sprintf("Delta_r = %+.4f [%.4f to %.4f] (z = %.2f, p = %.4f)", mz$delta_r, mz$ci_lo, mz$ci_hi, mz$meng_z, mz$meng_p)
+    } else {
+      dr_str <- "Not applicable (cross-regime)"
+    }
+    oos_rows[[length(oos_rows) + 1]] <<- data.frame(
+      Predictor = pred_name,
+      Trained_Regimes = train_env,
+      Evaluated_Yield_Regime = test_env,
+      Validation_Scope = val_type,
+      Pearson_r = round(as.numeric(ct$estimate), 4),
+      CI_95_Lower = round(ct$conf.int[1], 4),
+      CI_95_Upper = round(ct$conf.int[2], 4),
+      t_statistic = round(as.numeric(ct$statistic), 3),
+      p_value = signif(ct$p.value, 4),
+      Delta_r_vs_SameRegime_PT = dr_str,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  # Out-of-sample TSI_PZ_WarmII
+  add_oos_row("TSI_PZ_WarmII", "NWPZ Baseline + PZ Warm II", "NWPZ Warm", "Out-of-Sample Cross-Regime",
+              oos_df$TSI_PZ_WarmII, oos_df$`GrainYld_NWPZ Warm`)
+  add_oos_row("TSI_PZ_WarmII", "NWPZ Baseline + PZ Warm II", "PZ Warm I", "Out-of-Sample Cross-Regime",
+              oos_df$TSI_PZ_WarmII, oos_df$`GrainYld_PZ Warm I`)
+  # Out-of-sample TSI_Delhi
+  add_oos_row("TSI_Delhi", "NWPZ Baseline + NWPZ Warm", "PZ Warm I", "Out-of-Sample Cross-Regime",
+              oos_df$TSI_Delhi, oos_df$`GrainYld_PZ Warm I`)
+  add_oos_row("TSI_Delhi", "NWPZ Baseline + NWPZ Warm", "PZ Warm II", "Out-of-Sample Cross-Regime",
+              oos_df$TSI_Delhi, oos_df$`GrainYld_PZ Warm II`)
+  # Out-of-sample Residual Retention (PT_Stress ~ PT_Opt)
+  add_oos_row("Retention_Resid (PZ Warm II)", "lm(PT_PZ_WarmII ~ PT_Opt)", "NWPZ Warm", "Out-of-Sample Residual Index",
+              oos_df$Retention_Resid, oos_df$`GrainYld_NWPZ Warm`)
+  add_oos_row("Retention_Resid (PZ Warm II)", "lm(PT_PZ_WarmII ~ PT_Opt)", "PZ Warm I", "Out-of-Sample Residual Index",
+              oos_df$Retention_Resid, oos_df$`GrainYld_PZ Warm I`)
+  add_oos_row("Retention_Resid_Delhi (NWPZ Warm)", "lm(PT_NWPZ_Warm ~ PT_Opt)", "PZ Warm I", "Out-of-Sample Residual Index",
+              oos_df$Retention_Resid_Delhi, oos_df$`GrainYld_PZ Warm I`)
+  add_oos_row("Retention_Resid_Delhi (NWPZ Warm)", "lm(PT_NWPZ_Warm ~ PT_Opt)", "PZ Warm II", "Out-of-Sample Residual Index",
+              oos_df$Retention_Resid_Delhi, oos_df$`GrainYld_PZ Warm II`)
+  # Baseline benchmarks
+  add_oos_row("Baseline Yield (NWPZ Baseline)", "NWPZ Baseline", "NWPZ Warm", "Out-of-Sample Baseline Yield Benchmark",
+              oos_df$`GrainYld_NWPZ Baseline`, oos_df$`GrainYld_NWPZ Warm`)
+  add_oos_row("Baseline PT (NWPZ Baseline)", "NWPZ Baseline", "NWPZ Warm", "Out-of-Sample Baseline PT Benchmark",
+              oos_df$PT_Opt, oos_df$`GrainYld_NWPZ Warm`)
+  # Within-regime (in-sample) comparisons vs raw PT_Stress
+  add_oos_row("TSI_Delhi (In-Sample)", "NWPZ Baseline + NWPZ Warm", "NWPZ Warm", "In-Sample (Shares PT_NWPZ_Warm with Yield)",
+              oos_df$TSI_Delhi, oos_df$`GrainYld_NWPZ Warm`, oos_df$`PT_Count_NWPZ Warm`)
+  add_oos_row("TSI_PZ_WarmII (In-Sample)", "NWPZ Baseline + PZ Warm II", "PZ Warm II", "In-Sample (Shares PT_PZ_WarmII with Yield)",
+              oos_df$TSI_PZ_WarmII, oos_df$`GrainYld_PZ Warm II`, oos_df$`PT_Count_PZ Warm II`)
+
+  table_s6c_oos <- bind_rows(oos_rows)
+  write.csv(table_s6c_oos, file.path(sec23_dir, "Table_TSI_OutOfSample_Validation.csv"), row.names = FALSE)
+
+  # ----------------------------------------------------------------------------
   # 5.2 Vegetative Micro-Phenology & Tiller Survival Correlations With Grain Yield
-  #     (Strictly Vegetative & Tiller Retention Metrics; Zero Duplicate AUTPC, Zero TKW)
+  #     (Strictly Vegetative & Tiller Retention Metrics; Zero Duplicate AUTPC, Zero TKW;
+  #      Delhi = Inferential Randomized Trials; Dharwad & TSI = Descriptive Within-Regime)
   # ----------------------------------------------------------------------------
   comp_metrics <- c(
     "AUTPC_norm",
@@ -3581,56 +3814,84 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   cor_results <- list()
   for (env in env_metadata$Env_Name) {
     sub_df <- blues_df %>% filter(Environment == env)
+    scope_env <- if (env %in% c("NWPZ Baseline", "NWPZ Warm")) {
+      "Inferential (Randomized Incomplete-Block Trial)"
+    } else if (env == "PZ Warm I") {
+      "Descriptive Within-Regime Only (Unrandomized Strip Layout; Plot Yield Decoupled from Sampled Plants, r = 0.05)"
+    } else {
+      "Descriptive Within-Regime Only (Unrandomized Strip Layout; r = 0.97 Driven by Plot-Level Stand/Plant-Size Factor)"
+    }
+    fn_env <- if (env %in% c("NWPZ Baseline", "NWPZ Warm")) "b" else "c"
     for (cm in comp_metrics) {
       ct_unadj <- cor.test(sub_df[[cm]], sub_df$GrainYld)
       r_val <- as.numeric(ct_unadj$estimate)
       sig_u <- if (ct_unadj$p.value < 0.001) "***" else if (ct_unadj$p.value < 0.01) "**" else if (ct_unadj$p.value < 0.05) "*" else "ns"
       cor_results[[paste0(env, "_", cm)]] <- data.frame(
-        Environment     = env,
-        Component       = cm,
-        Component_Label = gsub("\n", " ", comp_labels[cm]),
-        Plot_Label      = comp_labels[cm],
-        Trait_Mean      = round(mean(sub_df[[cm]], na.rm = TRUE), 3),
-        Trait_SD        = round(sd(sub_df[[cm]], na.rm = TRUE), 3),
-        Pearson_r       = round(r_val, 4),
-        R_Squared_Pct   = round((r_val^2) * 100, 2),
-        t_statistic     = round(as.numeric(ct_unadj$statistic), 3),
-        df              = as.integer(ct_unadj$parameter),
-        p_value         = ct_unadj$p.value,
-        Significance    = sig_u,
-        stringsAsFactors = FALSE
+        Environment          = env,
+        Component            = cm,
+        Component_Label      = sprintf("%s [%s]", gsub("\n", " ", comp_labels[cm]), fn_env),
+        Plot_Label           = comp_labels[cm],
+        Trait_Mean           = round(mean(sub_df[[cm]], na.rm = TRUE), 3),
+        Trait_SD             = round(sd(sub_df[[cm]], na.rm = TRUE), 3),
+        Pearson_r            = round(r_val, 4),
+        R_Squared_Pct        = round((r_val^2) * 100, 2),
+        t_statistic          = round(as.numeric(ct_unadj$statistic), 3),
+        df                   = as.integer(ct_unadj$parameter),
+        p_value              = ct_unadj$p.value,
+        Significance         = sig_u,
+        Footnote_Ref         = fn_env,
+        Methodological_Scope = scope_env,
+        stringsAsFactors     = FALSE
       )
     }
 
-    # Also append TSI correlation row for the 3 stress environments into Table 4
-    if (env %in% c("NWPZ Warm", "PZ Warm", "PZ Acute")) {
+    # Also append TSI correlation row for the 3 stress environments into Table 4 (descriptive within-regime retention)
+    if (env %in% c("NWPZ Warm", "PZ Warm I", "PZ Warm II")) {
       sub_tsi <- tsi_multi_df %>% filter(Environment == env)
       ct_t <- cor.test(sub_tsi$TSI, sub_tsi$Yield_Stress)
       r_t  <- as.numeric(ct_t$estimate)
       sig_t <- if (ct_t$p.value < 0.001) "***" else if (ct_t$p.value < 0.01) "**" else if (ct_t$p.value < 0.05) "*" else "ns"
       cor_results[[paste0(env, "_TSI")]] <- data.frame(
-        Environment     = env,
-        Component       = "TSI",
-        Component_Label = "Tiller Stability Index (TSI vs. NWPZ Baseline)",
-        Plot_Label      = "TSI",
-        Trait_Mean      = round(mean(sub_tsi$TSI, na.rm = TRUE), 3),
-        Trait_SD        = round(sd(sub_tsi$TSI, na.rm = TRUE), 3),
-        Pearson_r       = round(r_t, 4),
-        R_Squared_Pct   = round((r_t^2) * 100, 2),
-        t_statistic     = round(as.numeric(ct_t$statistic), 3),
-        df              = as.integer(ct_t$parameter),
-        p_value         = ct_t$p.value,
-        Significance    = sig_t,
-        stringsAsFactors = FALSE
+        Environment          = env,
+        Component            = "TSI",
+        Component_Label      = "Tiller Stability Index (TSI vs. NWPZ Baseline) [a]",
+        Plot_Label           = "TSI",
+        Trait_Mean           = round(mean(sub_tsi$TSI, na.rm = TRUE), 3),
+        Trait_SD             = round(sd(sub_tsi$TSI, na.rm = TRUE), 3),
+        Pearson_r            = round(r_t, 4),
+        R_Squared_Pct        = round((r_t^2) * 100, 2),
+        t_statistic          = round(as.numeric(ct_t$statistic), 3),
+        df                   = as.integer(ct_t$parameter),
+        p_value              = ct_t$p.value,
+        Significance         = sig_t,
+        Footnote_Ref         = "a",
+        Methodological_Scope = "Structural identity / within-regime retention check (TSI shares PT_Stress with yield; out-of-sample |r| <= 0.11)",
+        stringsAsFactors     = FALSE
       )
     }
   }
 
   table_4_correlations <- bind_rows(cor_results)
   stopifnot(sum(is.na(table_4_correlations)) == 0L)
+
+  # Main Text Table 4 omits the wide Methodological_Scope column (replaced by concise Footnote_Ref [a, b, c])
+  # Full archival version with Methodological_Scope is preserved in Archive_Rejected and in the Excel workbook
+  t4_main_clean <- table_4_correlations %>% select(-Plot_Label, -Methodological_Scope)
+  t4_archival   <- table_4_correlations %>% select(-Plot_Label)
+  t4_footnote_text <- paste0(
+    "Table 4 Footnotes: [a] Structural/algebraic retention check (TSI = [PT_Stress / PT_Baseline] x [PT_Stress / mean(PT_Stress)] shares PT_Stress with harvest spike density; out-of-sample cross-regime |r| <= 0.11). ",
+    "[b] Independent biological hypothesis test in randomized incomplete-block trials (NWPZ Baseline & NWPZ Warm). ",
+    "[c] Descriptive within-regime correlation in unrandomized strip trials (PZ Warm I & PZ Warm II)."
+  )
+
   write.csv(
-    table_4_correlations %>% select(-Plot_Label),
+    t4_main_clean,
     file.path(sec23_dir, "Table_4_MicroPhenology_AUTPC_and_TSI_Yield_Correlations.csv"),
+    row.names = FALSE
+  )
+  write.csv(
+    t4_archival,
+    file.path(archive_sec23_dir, "Table_4_Archival_With_Methodological_Scope.csv"),
     row.names = FALSE
   )
 
@@ -3664,11 +3925,16 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   if (requireNamespace("openxlsx", quietly = TRUE)) {
     wb_sec23 <- openxlsx::createWorkbook()
 
-    t4_export <- table_4_correlations %>% select(-Plot_Label)
     openxlsx::addWorksheet(wb_sec23, "Table_4_Yield_Correlations")
-    openxlsx::writeData(wb_sec23, "Table_4_Yield_Correlations", t4_export)
-    openxlsx::addStyle(wb_sec23, "Table_4_Yield_Correlations", header_style, rows = 1, cols = 1:ncol(t4_export), gridExpand = TRUE)
-    openxlsx::setColWidths(wb_sec23, "Table_4_Yield_Correlations", cols = 1:ncol(t4_export), widths = "auto")
+    openxlsx::writeData(wb_sec23, "Table_4_Yield_Correlations", t4_main_clean)
+    openxlsx::addStyle(wb_sec23, "Table_4_Yield_Correlations", header_style, rows = 1, cols = 1:ncol(t4_main_clean), gridExpand = TRUE)
+    openxlsx::writeData(wb_sec23, "Table_4_Yield_Correlations", data.frame(Note = t4_footnote_text), startRow = nrow(t4_main_clean) + 3, colNames = FALSE)
+    openxlsx::setColWidths(wb_sec23, "Table_4_Yield_Correlations", cols = 1:ncol(t4_main_clean), widths = "auto")
+
+    openxlsx::addWorksheet(wb_sec23, "Table_4_Archival_With_Scope")
+    openxlsx::writeData(wb_sec23, "Table_4_Archival_With_Scope", t4_archival)
+    openxlsx::addStyle(wb_sec23, "Table_4_Archival_With_Scope", header_style, rows = 1, cols = 1:ncol(t4_archival), gridExpand = TRUE)
+    openxlsx::setColWidths(wb_sec23, "Table_4_Archival_With_Scope", cols = 1:ncol(t4_archival), widths = "auto")
 
     openxlsx::addWorksheet(wb_sec23, "Table_S6A_TSI_Transitions")
     openxlsx::writeData(wb_sec23, "Table_S6A_TSI_Transitions", table_s6a_transitions)
@@ -3680,6 +3946,11 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
     openxlsx::addStyle(wb_sec23, "Table_S6B_Genotype_TSI", header_style, rows = 1, cols = 1:ncol(table_s6b_genotypes), gridExpand = TRUE)
     openxlsx::setColWidths(wb_sec23, "Table_S6B_Genotype_TSI", cols = 1:ncol(table_s6b_genotypes), widths = "auto")
 
+    openxlsx::addWorksheet(wb_sec23, "Table_S6C_TSI_OutOfSample")
+    openxlsx::writeData(wb_sec23, "Table_S6C_TSI_OutOfSample", table_s6c_oos)
+    openxlsx::addStyle(wb_sec23, "Table_S6C_TSI_OutOfSample", header_style, rows = 1, cols = 1:ncol(table_s6c_oos), gridExpand = TRUE)
+    openxlsx::setColWidths(wb_sec23, "Table_S6C_TSI_OutOfSample", cols = 1:ncol(table_s6c_oos), widths = "auto")
+
     openxlsx::addWorksheet(wb_sec23, "Table_S7_Anchor_Sensitivity")
     openxlsx::writeData(wb_sec23, "Table_S7_Anchor_Sensitivity", table_s7_anchor)
     openxlsx::addStyle(wb_sec23, "Table_S7_Anchor_Sensitivity", header_style, rows = 1, cols = 1:ncol(table_s7_anchor), gridExpand = TRUE)
@@ -3689,10 +3960,9 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   }
 
   # ----------------------------------------------------------------------------
-  # 5.3 Clean 2-Panel Master Figure for Section 2.3 (TSI_Compound_Yield_Validation.png):
-  #     Panel A (Left):  TSI Direct Yield Validation Under Acute Heat (With Typeset Formula)
+  # 5.3 Clean 2-Panel Master Figure for Section 2.3 (TSI_Compound_Yield_Validation_v2.png):
+  #     Panel A (Left):  Descriptive Within-Regime TSI Retention vs. Yield (PZ Warm II)
   #     Panel B (Right): Multi-Stress TSI Classification & Stability Retention Across Regimes
-  #     (Also archive the 3-panel AUTPC+TSI version to Archive_Rejected for supervisor consultation)
   # ----------------------------------------------------------------------------
   heat_df <- table_4_correlations %>%
     filter(Component != "TSI") %>%
@@ -3719,49 +3989,49 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
     ) +
     labs(
       title = "A. Vegetative Micro-Phenology, AUTPC Decomposition & Tiller Survival Correlations With Grain Yield",
-      subtitle = "Strictly vegetative & tiller-retention parameters (Stage-1 LMM BLUEs, N = 200 genotypes per regime)",
+      subtitle = "Inferential in Delhi (NWPZ); descriptive within-regime in Dharwad (PZ Warm II r = 0.97 reflects plot-level stand/size scaling)",
       x = "",
       y = "Thermal Regime"
     )
 
-  # --- Panel A: TSI Direct Yield Validation Under Acute Heat Stress ---
+  # --- Panel A: Descriptive Within-Regime TSI Retention Under Heat Stress (PZ Warm II) ---
   pza_sub <- blues_df %>%
-    filter(Environment == "PZ Acute") %>%
+    filter(Environment == "PZ Warm II") %>%
     mutate(
       Stability_Lab = factor(
-        ifelse(TSI >= 1.0, "Stable (TSI \u2265 1.0)", "Contrasting (TSI < 1.0)"),
+        ifelse(TSI_PZ_WarmII >= 1.0, "Stable (TSI \u2265 1.0)", "Contrasting (TSI < 1.0)"),
         levels = c("Contrasting (TSI < 1.0)", "Stable (TSI \u2265 1.0)")
       )
     )
-  ct_tsi_unadj <- cor.test(pza_sub$TSI, pza_sub$GrainYld)
+  ct_tsi_unadj <- cor.test(pza_sub$TSI_PZ_WarmII, pza_sub$GrainYld)
   r_tsi_yld    <- as.numeric(ct_tsi_unadj$estimate)
   p_tsi_yld    <- ct_tsi_unadj$p.value
 
-  res_tsi_pza <- residuals(lm(TSI ~ factor(Field_Pos_Block_Diagnostic), data = pza_sub))
+  res_tsi_pza <- residuals(lm(TSI_PZ_WarmII ~ factor(Field_Pos_Block_Diagnostic), data = pza_sub))
   res_yld_pza <- residuals(lm(GrainYld ~ factor(Field_Pos_Block_Diagnostic), data = pza_sub))
   r_tsi_adj   <- cor(res_tsi_pza, res_yld_pza)
   df_tsi_adj  <- nrow(pza_sub) - length(unique(pza_sub$Field_Pos_Block_Diagnostic)) - 1L
   t_tsi_adj   <- r_tsi_adj * sqrt(df_tsi_adj / (1 - r_tsi_adj^2))
   p_tsi_adj   <- 2 * pt(-abs(t_tsi_adj), df = df_tsi_adj)
 
-  n_stab_pza <- sum(pza_sub$TSI >= 1.0, na.rm = TRUE)
-  n_cont_pza <- sum(pza_sub$TSI <  1.0, na.rm = TRUE)
+  n_stab_pza <- sum(pza_sub$TSI_PZ_WarmII >= 1.0, na.rm = TRUE)
+  n_cont_pza <- sum(pza_sub$TSI_PZ_WarmII <  1.0, na.rm = TRUE)
 
   top_tsi_genos <- pza_sub %>%
-    mutate(Rank_Score = as.numeric(scale(TSI)) + as.numeric(scale(GrainYld))) %>%
+    mutate(Rank_Score = as.numeric(scale(TSI_PZ_WarmII)) + as.numeric(scale(GrainYld))) %>%
     arrange(desc(Rank_Score)) %>%
     slice_head(n = 5)
 
   tsi_formula_expr <- "bold(TSI) == bgroup('(', frac(PT[Stress], PT[Baseline]), ')') %*% bgroup('(', frac(PT[Stress], bar(PT)[Stress]), ')')"
 
-  p_panel_a_tsi <- ggplot(pza_sub, aes(x = TSI, y = GrainYld)) +
+  p_panel_a_tsi <- ggplot(pza_sub, aes(x = TSI_PZ_WarmII, y = GrainYld)) +
     annotate("rect", xmin = 1.0, xmax = Inf, ymin = -Inf, ymax = Inf, fill = "#3C5488", alpha = 0.05) +
     geom_vline(xintercept = 1.0, linetype = "dashed", color = "grey30", linewidth = 0.7) +
     geom_smooth(method = "lm", se = TRUE, color = "grey15", fill = "grey75", linewidth = 0.95, alpha = 0.35) +
     geom_point(aes(fill = Stability_Lab), shape = 21, size = 2.9, alpha = 0.86, color = "black", stroke = 0.4) +
     ggrepel::geom_text_repel(
       data = top_tsi_genos,
-      aes(x = TSI, y = GrainYld, label = Genotype),
+      aes(x = TSI_PZ_WarmII, y = GrainYld, label = Genotype),
       size = 3.0, fontface = "bold", color = "#1B2631",
       box.padding = 0.3, min.segment.length = 0.1, seed = 42
     ) +
@@ -3788,15 +4058,15 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
     scale_y_continuous(limits = c(0.24, 0.82), breaks = seq(0.3, 0.8, by = 0.1)) +
     pub_theme +
     theme(
-      plot.subtitle = element_text(size = 9.4, color = "grey25", face = "bold")
+      plot.subtitle = element_text(size = 8.9, color = "grey25", face = "bold", lineheight = 1.1)
     ) +
     labs(
-      title = "A. TSI Direct Yield Validation Under Acute Heat Stress (PZ Acute)",
+      title = "A. Descriptive Within-Regime TSI Retention vs. Yield (PZ Warm II)",
       subtitle = sprintf(
-        "Unadjusted: r = %.2f (%s) | 20-Block Position-Partialled: r_adj = %.2f (%s)",
-        r_tsi_yld, format_p_stat(p_tsi_yld), r_tsi_adj, format_p_stat(p_tsi_adj)
+        "In-sample r = %.2f (%s; pos-adj r = %.2f) reflects shared PT_Stress; out-of-sample cross-regime |r| \u2264 0.11 (ns)",
+        r_tsi_yld, format_p_stat(p_tsi_yld), r_tsi_adj
       ),
-      x = "Tiller Stability Index (TSI)",
+      x = "Tiller Stability Index (TSI_PZ_WarmII)",
       y = sprintf("Grain Yield (%s)", YIELD_UNIT_LABEL)
     )
 
@@ -3805,8 +4075,8 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
     mutate(
       Env_Factor = factor(
         Environment,
-        levels = c("NWPZ Warm", "PZ Warm", "PZ Acute"),
-        labels = c("NWPZ Warm\n(Early Stress)", "PZ Warm\n(Chronic Stress)", "PZ Acute\n(Acute Stress)")
+        levels = c("NWPZ Warm", "PZ Warm I", "PZ Warm II"),
+        labels = c("NWPZ Warm", "PZ Warm I", "PZ Warm II")
       ),
       TSI_Class_Clean = factor(
         ifelse(TSI >= 1.0, "Stable (TSI \u2265 1.0)", "Contrasting (TSI < 1.0)"),
@@ -3898,7 +4168,7 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
 
   delw_sub   <- blues_df %>% filter(Environment == "NWPZ Warm")
   ct_tsi_del <- cor.test(delw_sub$TSI_Delhi, delw_sub$GrainYld)
-  m_warm_ac  <- table_s6a_transitions %>% filter(Reference_Stress_Regime == "NWPZ Warm", Target_Stress_Regime == "PZ Acute")
+  m_warm_ac  <- table_s6a_transitions %>% filter(Reference_Stress_Regime == "NWPZ Warm", Target_Stress_Regime == "PZ Warm II")
 
   p_panel_b_tsi_alluv <- ggplot() +
     geom_polygon(data = ribs_tsi_df, aes(x = x, y = y, group = poly_id, fill = Class), alpha = 0.30, color = "white", linewidth = 0.25) +
@@ -3933,7 +4203,7 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
 
   # Archive the 3-panel combined version (with AUTPC heatmap on top) for supervisor consultation
   p_sec23_3panel_archive <- (p_panel_heat_arch / (
-    (p_panel_a_tsi + labs(title = "B. TSI Direct Yield Validation Under Acute Heat Stress (PZ Acute)")) |
+    (p_panel_a_tsi + labs(title = "B. TSI Direct Yield Validation Under Heat Stress (PZ Warm II)")) |
     (p_panel_b_tsi_alluv + labs(title = "C. Multi-Stress TSI Classification & Stability Retention"))
   )) +
     plot_layout(heights = c(1.0, 1.08))
@@ -3946,12 +4216,12 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   p_sec23_master_2panel <- (p_panel_a_tsi | p_panel_b_tsi_alluv) +
     plot_layout(widths = c(1.05, 1.0)) +
     plot_annotation(
-      caption = "Panel A validates the Tiller Stability Index (TSI, benchmark \u2265 1.0) against grain yield under severe vegetative heat stress (PZ Acute).\nPanel B tracks TSI classification proportions and individual genotype stability flows across moderate (NWPZ Warm), chronic (PZ Warm), and acute (PZ Acute) stress regimes.",
+      caption = "Panel A validates the Tiller Stability Index (TSI, benchmark \u2265 1.0) against grain yield under severe vegetative heat stress (PZ Warm II).\nPanel B tracks TSI classification proportions and individual genotype stability flows across NWPZ Warm, PZ Warm I, and PZ Warm II regimes.",
       theme = theme(plot.caption = element_text(size = 9.5, color = "grey30", face = "italic", hjust = 0, lineheight = 1.15))
     )
 
   ggsave(
-    file.path(sec23_dir, "TSI_Compound_Yield_Validation.png"),
+    file.path(sec23_dir, "TSI_Compound_Yield_Validation_v2.png"),
     plot = p_sec23_master_2panel, width = 15.8, height = 6.6, dpi = 600
   )
 } else {
@@ -4090,18 +4360,38 @@ if (length(legacy_gam_rds) > 0) {
 }
 
 fit_gam_reml <- function(rds_name, f_formula, data_df) {
+  prefix <- sub("\\.rds$", "", rds_name)
   gam_hash <- substr(digest::digest(list(f_formula, data_df, as.character(packageVersion("mgcv"))), algo = "md5"), 1, 10)
-  hashed_name <- paste0(sub("\\.rds$", "", rds_name), "_", gam_hash, ".rds")
+  hashed_name <- paste0(prefix, "_", gam_hash, ".rds")
   p_rds <- file.path(cache_dir, hashed_name)
   if (file.exists(p_rds) && !isTRUE(CLEAR_BLUE_CACHE)) {
-    cat("  Loading cached GAM:", hashed_name, "\n")
-    readRDS(p_rds)
-  } else {
-    cat("  Fitting GAM via REML:", hashed_name, "...\n")
-    m_fit <- mgcv::gam(as.formula(f_formula), data = data_df, method = "REML")
-    saveRDS(m_fit, p_rds)
-    m_fit
+    m_cached <- readRDS(p_rds)
+    if (identical(levels(m_cached$model$Env_Factor), levels(data_df$Env_Factor))) {
+      cat("  Loading cached GAM:", hashed_name, "\n")
+      return(m_cached)
+    } else {
+      cat("  Discarding stale-level cached GAM:", hashed_name, "\n")
+      unlink(p_rds)
+    }
   }
+  existing_cands <- list.files(cache_dir, pattern = paste0("^", prefix, "_[0-9a-f]{10}\\.rds$"), full.names = TRUE)
+  for (cand in existing_cands) {
+    if (!isTRUE(CLEAR_BLUE_CACHE)) {
+      m_cand <- tryCatch(readRDS(cand), error = function(e) NULL)
+      if (!is.null(m_cand) && identical(levels(m_cand$model$Env_Factor), levels(data_df$Env_Factor))) {
+        cat("  Loading & re-keying verified cached GAM:", basename(cand), "->", hashed_name, "\n")
+        saveRDS(m_cand, p_rds)
+        return(m_cand)
+      } else {
+        cat("  Removing stale-level cached GAM:", basename(cand), "\n")
+        unlink(cand)
+      }
+    }
+  }
+  cat("  Fitting GAM via REML:", hashed_name, "...\n")
+  m_fit <- mgcv::gam(as.formula(f_formula), data = data_df, method = "REML")
+  saveRDS(m_fit, p_rds)
+  m_fit
 }
 
 # (a) Primary Thermal Time Axis (Uncapped GDD)
@@ -4229,6 +4519,8 @@ extract_param_table <- function(mod, mod_name, axis_name) {
   s <- summary(mod)
   df <- as.data.frame(s$p.table)
   df$Term <- rownames(df)
+  df$Term <- sub("^Env_FactorPZ Warm$", "Env_FactorPZ Warm I", df$Term)
+  df$Term <- sub("^Env_FactorPZ Acute$", "Env_FactorPZ Warm II", df$Term)
   rownames(df) <- NULL
   df$Model <- mod_name
   df$Axis <- axis_name
@@ -4259,18 +4551,29 @@ all_params <- bind_rows(
 )
 write.csv(all_params, file.path(sec24_dir, "GAM_Parametric_Coefficients.csv"), row.names = FALSE)
 
-# 6.5 Companion Linear Mixed Model (Task 3: lme4::lmer with emmeans stage means per environment)
-cat("  Fitting Companion Linear Mixed Model (lme4::lmer)...\n")
-fit_lmer_companion <- lme4::lmer(
-  Count ~ Env_Factor * Stage + (1|Genotype) + (1|Genotype:Env_Factor),
-  data = gam_data
+# 6.5 Companion Marginal Linear Model (Item 12: nlme::gls with unstructured stage covariance & stage-specific variances)
+cat("  Fitting Companion Marginal Model (nlme::gls with corSymm + varIdent)...\n")
+gam_data_gls <- gam_data %>%
+  mutate(Stage_Num = as.integer(Stage)) %>%
+  arrange(GE, Stage_Num)
+
+fit_gls_companion <- nlme::gls(
+  Count ~ Env_Factor * Stage,
+  data = gam_data_gls,
+  correlation = nlme::corSymm(form = ~ Stage_Num | GE),
+  weights = nlme::varIdent(form = ~ 1 | Stage),
+  method = "REML"
 )
 
 emm_companion <- emmeans::emmeans(
-  fit_lmer_companion, ~ Stage | Env_Factor,
-  lmerTest.limit = 3500, pbkrtest.limit = 3500
+  fit_gls_companion, ~ Stage | Env_Factor,
+  mode = "df.error"
 )
 emm_companion_df <- as.data.frame(emm_companion)
+if ("asymp.LCL" %in% names(emm_companion_df) && !("lower.CL" %in% names(emm_companion_df))) {
+  emm_companion_df$lower.CL <- emm_companion_df$asymp.LCL
+  emm_companion_df$upper.CL <- emm_companion_df$asymp.UCL
+}
 write.csv(emm_companion_df, file.path(sec24_dir, "LMER_Companion_Stage_Means.csv"), row.names = FALSE)
 
 # 6.6 Residual Diagnostics & Variance Heterogeneity Evaluation (Task 4)
@@ -4558,7 +4861,7 @@ ggsave(file.path(sec24_dir, "Thermal_GAM_Genotype_Faceted_Supplement.png"),
        plot = p_supp, width = 11, height = 8.5, dpi = 600)
 
 # 6.10 Anchor Sensitivity Table (Archival: covered under Section 2.3 Table S7)
-if (exists("master_raw") && !is.null(master_raw)) {
+if (exists("master_raw") && !is.null(master_raw) && "AUTPC_norm" %in% names(master_raw)) {
   anchor_sensitivity_export <- master_raw %>%
     group_by(Environment) %>%
     summarise(
@@ -4636,9 +4939,12 @@ table_s9_combined <- bind_rows(
   table_s9_param  %>% mutate(Term_Type = "Parametric")
 ) %>% select(Term_Type, everything())
 
-# Format numeric values and replace inapplicable NAs with "—" for zero NA CSV integrity
+# Format numeric values and replace inapplicable NAs with "--" for zero NA CSV integrity
 table_s9_24 <- table_s9_combined %>%
-  mutate(across(where(is.numeric), ~ ifelse(is.na(.), "\u2014", as.character(round(., 4)))))
+  mutate(
+    p_value = ifelse(is.na(p_value), "--", ifelse(p_value < 0.0001, "< 0.0001", sprintf("%.4f", p_value))),
+    across(where(is.numeric), ~ ifelse(is.na(.), "--", sprintf("%.4f", .)))
+  )
 
 write.csv(table_s9_24,
           file.path(sec24_dir, "Table_S9_GAM_Smooth_and_Parametric_Coefficients.csv"),
@@ -4716,6 +5022,20 @@ cat("  Section 6 Complete: Figures, 4 consolidated tables, XLSX workbook, and ar
 # ==============================================================================
 cat(">>> Executing Section 7: Strategy Master Profiles & Yield Dynamics...\n")
 
+# Construct master_profiles unconditionally so Section 8 (Table S13 cross-tab) is always satisfied
+stopifnot(exists("blues_df"), exists("tsi_df"))
+master_profiles <- blues_df %>% filter(Environment == "NWPZ Baseline") %>%
+  select(Genotype, Trajectory = Trajectory_Baseline, Vigor = Vigor_Baseline) %>%
+  left_join(tsi_df %>% select(Genotype, Stability), by = "Genotype") %>%
+  mutate(
+    Vigor_Short    = ifelse(Vigor == VIGOR_HI, "HiVig", "LoVig"),
+    Master_Profile = paste(substr(Trajectory, 1, 3), Vigor_Short, substr(Stability, 1, 4), sep = "-"),
+    Trajectory_Plain = ifelse(Trajectory == "Earlier Proportional Peak", "Early Peak", "Late Peak"),
+    Vigor_Plain      = ifelse(Vigor == VIGOR_HI, "High Vigor", "Low Vigor"),
+    TSI_Plain        = ifelse(Stability == "Stable", "High TSI", "Low TSI"),
+    Master_Profile_Readable = paste(Trajectory_Plain, Vigor_Plain, TSI_Plain, sep = " | ")
+  )
+
 if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
   sec25_dir <- file.path(assets_dir, "Section_2.5_Categorical_Classifications")
   dir.create(sec25_dir, showWarnings = FALSE, recursive = TRUE)
@@ -4730,36 +5050,22 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
     (mean(x) - mean(y)) / s_pooled
   }
 
-  format_p_stat <- function(p_val) {
-    stars <- if (p_val < 0.001) "***" else if (p_val < 0.01) "**" else if (p_val < 0.05) "*" else "(ns)"
-    p_num <- if (p_val < 0.001) sprintf("%.2e", p_val) else sprintf("%.4f", p_val)
-    sprintf("p = %s %s", p_num, stars)
-  }
-
-  format_p_display <- function(p) {
-    if (is.na(p)) return("N/A")
-    if (p < 0.001) sprintf("%.2e ***", p)
-    else if (p < 0.01) sprintf("%.4f **", p)
-    else if (p < 0.05) sprintf("%.4f *", p)
-    else sprintf("%.4f (ns)", p)
-  }
-
   # 7.1 Master Strategy Profiles Export
-  master_profiles <- blues_df %>% filter(Environment == "NWPZ Baseline") %>%
-    select(Genotype, Trajectory = Trajectory_Baseline, Vigor = Vigor_Baseline) %>%
-    left_join(tsi_df %>% select(Genotype, Stability), by = "Genotype") %>%
-    mutate(Master_Profile = paste(substr(Trajectory, 1, 3), substr(Vigor, 1, 4), substr(Stability, 1, 4), sep = "-"))
   write.csv(master_profiles, file.path(sec25_dir, "Master_Strategy_Profiles.csv"), row.names = FALSE)
 
-  # 7.2 3-Panel Strategy Yield Dynamics Figure
+  # 7.2 3-Panel Strategy Yield Dynamics Figure (Including Within-Delhi Randomized Heat Stress NWPZ Warm)
   opt_sub <- blues_df %>% filter(Environment == "NWPZ Baseline") %>% 
     select(Genotype, Yield_Opt = GrainYld, Trajectory = Trajectory_Baseline, Vigor = Vigor_Baseline, Stability)
-  str_sub <- blues_df %>% filter(Environment == "PZ Acute") %>% 
+  nwpz_w_sub <- blues_df %>% filter(Environment == "NWPZ Warm") %>%
+    select(Genotype, Yield_NWPZ_Warm = GrainYld)
+  str_sub <- blues_df %>% filter(Environment == "PZ Warm II") %>% 
     select(Genotype, Yield_Stress = GrainYld, Field_Pos_Block_DhwS2 = Field_Pos_Block_Diagnostic)
-  dyn_df <- inner_join(opt_sub, str_sub, by = "Genotype") %>%
+  dyn_df <- opt_sub %>%
+    inner_join(nwpz_w_sub, by = "Genotype") %>%
+    inner_join(str_sub, by = "Genotype") %>%
     mutate(
       Trajectory = factor(Trajectory, levels = c("Earlier Proportional Peak", "Later Proportional Peak")),
-      Vigor      = factor(Vigor, levels = c("Early Vigor", "Late Vigor")),
+      Vigor      = factor(Vigor, levels = c(VIGOR_HI, VIGOR_LO)),
       Stability  = factor(Stability, levels = c("Stable", "Contrasting"))
     )
 
@@ -4779,7 +5085,7 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
       )
   }
 
-  # Helper for 20-block position-adjusted ANCOVA on PZ Acute stress yield
+  # Helper for 20-block position-adjusted ANCOVA on PZ Warm II stress yield
   fit_pos_ancova <- function(df_in, group_col) {
     f_anc <- as.formula(paste0("Yield_Stress ~ ", group_col, " + factor(Field_Pos_Block_DhwS2)"))
     m_anc <- lm(f_anc, data = df_in)
@@ -4796,12 +5102,16 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
 
   # Panel A: Trajectory Strategy (Shape-Only: Earlier vs Later Proportional Peak)
   t_traj_opt <- t.test(Yield_Opt ~ Trajectory, data = dyn_df)
+  t_traj_nw  <- t.test(Yield_NWPZ_Warm ~ Trajectory, data = dyn_df)
   t_traj_str <- t.test(Yield_Stress ~ Trajectory, data = dyn_df)
   anc_traj   <- fit_pos_ancova(dyn_df, "Trajectory")
   diff_traj_opt <- t_traj_opt$estimate[1] - t_traj_opt$estimate[2]
+  diff_traj_nw  <- t_traj_nw$estimate[1] - t_traj_nw$estimate[2]
   diff_traj_str <- t_traj_str$estimate[1] - t_traj_str$estimate[2]
   d_traj_opt <- cohen_d(dyn_df$Yield_Opt[dyn_df$Trajectory == "Earlier Proportional Peak"],
                         dyn_df$Yield_Opt[dyn_df$Trajectory == "Later Proportional Peak"])
+  d_traj_nw  <- cohen_d(dyn_df$Yield_NWPZ_Warm[dyn_df$Trajectory == "Earlier Proportional Peak"],
+                        dyn_df$Yield_NWPZ_Warm[dyn_df$Trajectory == "Later Proportional Peak"])
   d_traj_str <- cohen_d(dyn_df$Yield_Stress[dyn_df$Trajectory == "Earlier Proportional Peak"],
                         dyn_df$Yield_Stress[dyn_df$Trajectory == "Later Proportional Peak"])
 
@@ -4811,16 +5121,20 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
     diff_traj_str, YIELD_UNIT_LABEL, t_traj_str$conf.int[1], t_traj_str$conf.int[2], t_traj_str$parameter, t_traj_str$statistic, format_p_stat(t_traj_str$p.value), d_traj_str
   )
 
-  # Panel B: Vegetative Vigor Strategy
+  # Panel B: Tillering Vigor Strategy (High vs Low Tillering Vigor)
   t_vig_opt  <- t.test(Yield_Opt ~ Vigor, data = dyn_df)
+  t_vig_nw   <- t.test(Yield_NWPZ_Warm ~ Vigor, data = dyn_df)
   t_vig_str  <- t.test(Yield_Stress ~ Vigor, data = dyn_df)
   anc_vig    <- fit_pos_ancova(dyn_df, "Vigor")
   diff_vig_opt <- t_vig_opt$estimate[1] - t_vig_opt$estimate[2]
+  diff_vig_nw  <- t_vig_nw$estimate[1] - t_vig_nw$estimate[2]
   diff_vig_str <- t_vig_str$estimate[1] - t_vig_str$estimate[2]
-  d_vig_opt <- cohen_d(dyn_df$Yield_Opt[dyn_df$Vigor == "Early Vigor"],
-                       dyn_df$Yield_Opt[dyn_df$Vigor == "Late Vigor"])
-  d_vig_str <- cohen_d(dyn_df$Yield_Stress[dyn_df$Vigor == "Early Vigor"],
-                       dyn_df$Yield_Stress[dyn_df$Vigor == "Late Vigor"])
+  d_vig_opt <- cohen_d(dyn_df$Yield_Opt[dyn_df$Vigor == VIGOR_HI],
+                       dyn_df$Yield_Opt[dyn_df$Vigor == VIGOR_LO])
+  d_vig_nw  <- cohen_d(dyn_df$Yield_NWPZ_Warm[dyn_df$Vigor == VIGOR_HI],
+                       dyn_df$Yield_NWPZ_Warm[dyn_df$Vigor == VIGOR_LO])
+  d_vig_str <- cohen_d(dyn_df$Yield_Stress[dyn_df$Vigor == VIGOR_HI],
+                       dyn_df$Yield_Stress[dyn_df$Vigor == VIGOR_LO])
 
   lbl_vig <- sprintf(
     "Optimal: diff = %+.4f %s [95%% CI: %.4f, %.4f]\nt(%.1f) = %.2f, %s, d = %.2f\nStress: diff = %+.4f %s [95%% CI: %.4f, %.4f]\nt(%.1f) = %.2f, %s, d = %.2f",
@@ -4828,14 +5142,18 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
     diff_vig_str, YIELD_UNIT_LABEL, t_vig_str$conf.int[1], t_vig_str$conf.int[2], t_vig_str$parameter, t_vig_str$statistic, format_p_stat(t_vig_str$p.value), d_vig_str
   )
 
-  # Panel C: Tiller Stability Index (TSI)
+  # Panel C: Tiller Stability Index (TSI_PZ_WarmII; Descriptive Within-Regime Class)
   t_tsi_opt  <- t.test(Yield_Opt ~ Stability, data = dyn_df)
+  t_tsi_nw   <- t.test(Yield_NWPZ_Warm ~ Stability, data = dyn_df)
   t_tsi_str  <- t.test(Yield_Stress ~ Stability, data = dyn_df)
   anc_tsi    <- fit_pos_ancova(dyn_df, "Stability")
   diff_tsi_opt <- t_tsi_opt$estimate[1] - t_tsi_opt$estimate[2]
+  diff_tsi_nw  <- t_tsi_nw$estimate[1] - t_tsi_nw$estimate[2]
   diff_tsi_str <- t_tsi_str$estimate[1] - t_tsi_str$estimate[2]
   d_tsi_opt <- cohen_d(dyn_df$Yield_Opt[dyn_df$Stability == "Stable"],
                        dyn_df$Yield_Opt[dyn_df$Stability == "Contrasting"])
+  d_tsi_nw  <- cohen_d(dyn_df$Yield_NWPZ_Warm[dyn_df$Stability == "Stable"],
+                       dyn_df$Yield_NWPZ_Warm[dyn_df$Stability == "Contrasting"])
   d_tsi_str <- cohen_d(dyn_df$Yield_Stress[dyn_df$Stability == "Stable"],
                        dyn_df$Yield_Stress[dyn_df$Stability == "Contrasting"])
 
@@ -4866,17 +5184,17 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
   top_dual_genos <- dyn_df %>% arrange(desc(Dual_Score)) %>% slice_head(n = 5)
 
   sub_p1 <- sprintf(
-    "\u0394Optimal = %+.3f %s (%s, d = %.2f)\n\u0394Stress = %+.3f %s (%s, d = %.2f; pos-adj %s)",
+    "\u0394NWPZ Baseline = %+.3f %s (%s, d = %.2f)\n\u0394PZ Warm II = %+.3f %s (%s, d = %.2f; pos-adj %s)",
     diff_traj_opt, YIELD_UNIT_LABEL, format_p_stat(t_traj_opt$p.value), d_traj_opt,
     diff_traj_str, YIELD_UNIT_LABEL, format_p_stat(t_traj_str$p.value), d_traj_str, format_p_stat(anc_traj$p_adj)
   )
   sub_p2 <- sprintf(
-    "\u0394Optimal = %+.3f %s (%s, d = %.2f)\n\u0394Stress = %+.3f %s (%s, d = %.2f; pos-adj %s)",
+    "\u0394NWPZ Baseline = %+.3f %s (%s, d = %.2f)\n\u0394PZ Warm II = %+.3f %s (%s, d = %.2f; pos-adj %s)",
     diff_vig_opt, YIELD_UNIT_LABEL, format_p_stat(t_vig_opt$p.value), d_vig_opt,
     diff_vig_str, YIELD_UNIT_LABEL, format_p_stat(t_vig_str$p.value), d_vig_str, format_p_stat(anc_vig$p_adj)
   )
   sub_p3 <- sprintf(
-    "\u0394Optimal = %+.3f %s (%s, d = %.2f)\n\u0394Stress = %+.3f %s (%s, d = %.2f; pos-adj %s)",
+    "\u0394NWPZ Baseline = %+.3f %s (%s, d = %.2f)\n\u0394PZ Warm II = %+.3f %s (%s, d = %.2f; pos-adj %s)",
     diff_tsi_opt, YIELD_UNIT_LABEL, format_p_stat(t_tsi_opt$p.value), d_tsi_opt,
     diff_tsi_str, YIELD_UNIT_LABEL, format_p_stat(t_tsi_str$p.value), d_tsi_str, format_p_stat(anc_tsi$p_adj)
   )
@@ -4887,28 +5205,37 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
     geom_hline(yintercept = pop_str_mean, linetype = "dotted", color = "grey50", linewidth = 0.5) +
     geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey60") +
     stat_ellipse(geom = "polygon", alpha = 0.14, level = 0.85, show.legend = FALSE) +
-    geom_point(size = 2.3, alpha = 0.65, shape = 21, stroke = 0.4, color = "black") +
+    geom_point(size = 2.4, alpha = 0.68, shape = 21, stroke = 0.4, color = "black") +
     geom_errorbar(data = cen_traj, aes(x = mean_opt, ymin = mean_str - ci_str, ymax = mean_str + ci_str),
-                  inherit.aes = FALSE, color = "black", width = 0.012, linewidth = 0.85) +
-    geom_errorbarh(data = cen_traj, aes(y = mean_str, xmin = mean_opt - ci_opt, xmax = mean_opt + ci_opt),
-                   inherit.aes = FALSE, color = "black", height = 0.012, linewidth = 0.85) +
+                  inherit.aes = FALSE, color = "black", width = 0.012, linewidth = 0.90) +
+    geom_errorbar(data = cen_traj, aes(y = mean_str, xmin = mean_opt - ci_opt, xmax = mean_opt + ci_opt),
+                  inherit.aes = FALSE, color = "black", width = 0.012, linewidth = 0.90, orientation = "y") +
     geom_point(data = cen_traj, aes(x = mean_opt, y = mean_str, fill = Trajectory),
                inherit.aes = FALSE, shape = 23, size = 4.6, stroke = 1.1, color = "black", show.legend = FALSE) +
     ggrepel::geom_text_repel(
       data = top_dual_genos,
       aes(x = Yield_Opt, y = Yield_Stress, label = Genotype),
-      inherit.aes = FALSE, size = 2.8, fontface = "bold", color = "grey15",
-      box.padding = 0.3, max.overlaps = 15, min.segment.length = 0.1, seed = 42
+      inherit.aes = FALSE, size = 3.15, fontface = "bold", color = "grey15",
+      box.padding = 0.35, max.overlaps = 15, seed = 42
     ) +
     scale_color_manual(values = c("Earlier Proportional Peak" = "#E64B35", "Later Proportional Peak" = "#4DBBD5")) +
     scale_fill_manual(values = c("Earlier Proportional Peak" = "#E64B35", "Later Proportional Peak" = "#4DBBD5")) +
     pub_theme +
-    theme(plot.subtitle = element_text(size = 8.8, color = "grey25", face = "bold", lineheight = 1.1)) +
-    labs(title = "A. Trajectory Strategy (Developmental Shape)",
+    theme(
+      plot.title = element_text(face = "bold", size = 13.5),
+      plot.subtitle = element_text(size = 9.5, color = "grey20", face = "bold", lineheight = 1.12),
+      axis.title = element_text(face = "bold", size = 11.5),
+      axis.text = element_text(face = "bold", size = 10.6, color = "black"),
+      legend.title = element_text(face = "bold", size = 11.4),
+      legend.text = element_text(face = "bold", size = 11.0),
+      legend.key.size = unit(0.65, "cm")
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 3.8, alpha = 1)), fill = guide_legend(override.aes = list(size = 3.8, alpha = 1))) +
+    labs(title = "A. Vegetative Tillering Trajectory Strategy",
          subtitle = sub_p1,
-         x = sprintf("Optimal Yield (%s)", YIELD_UNIT_LABEL),
-         y = sprintf("Acute Stress Yield (%s)", YIELD_UNIT_LABEL),
-         color = "Trajectory Shape:", fill = "Trajectory Shape:")
+         x = "NWPZ Baseline Yield (kg/plot)",
+         y = "PZ Warm II Yield (kg/plot)",
+         color = "Tillering Trajectory:", fill = "Tillering Trajectory:")
 
   p2_dyn <- ggplot(dyn_df, aes(x = Yield_Opt, y = Yield_Stress, color = Vigor, fill = Vigor)) +
     annotate("rect", xmin = pop_opt_mean, xmax = Inf, ymin = pop_str_mean, ymax = Inf, fill = "#2ca25f", alpha = 0.06) +
@@ -4916,28 +5243,37 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
     geom_hline(yintercept = pop_str_mean, linetype = "dotted", color = "grey50", linewidth = 0.5) +
     geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey60") +
     stat_ellipse(geom = "polygon", alpha = 0.14, level = 0.85, show.legend = FALSE) +
-    geom_point(size = 2.3, alpha = 0.65, shape = 21, stroke = 0.4, color = "black") +
+    geom_point(size = 2.4, alpha = 0.68, shape = 21, stroke = 0.4, color = "black") +
     geom_errorbar(data = cen_vig, aes(x = mean_opt, ymin = mean_str - ci_str, ymax = mean_str + ci_str),
-                  inherit.aes = FALSE, color = "black", width = 0.012, linewidth = 0.85) +
-    geom_errorbarh(data = cen_vig, aes(y = mean_str, xmin = mean_opt - ci_opt, xmax = mean_opt + ci_opt),
-                   inherit.aes = FALSE, color = "black", height = 0.012, linewidth = 0.85) +
+                  inherit.aes = FALSE, color = "black", width = 0.012, linewidth = 0.90) +
+    geom_errorbar(data = cen_vig, aes(y = mean_str, xmin = mean_opt - ci_opt, xmax = mean_opt + ci_opt),
+                  inherit.aes = FALSE, color = "black", width = 0.012, linewidth = 0.90, orientation = "y") +
     geom_point(data = cen_vig, aes(x = mean_opt, y = mean_str, fill = Vigor),
                inherit.aes = FALSE, shape = 23, size = 4.6, stroke = 1.1, color = "black", show.legend = FALSE) +
     ggrepel::geom_text_repel(
       data = top_dual_genos,
       aes(x = Yield_Opt, y = Yield_Stress, label = Genotype),
-      inherit.aes = FALSE, size = 2.8, fontface = "bold", color = "grey15",
-      box.padding = 0.3, max.overlaps = 15, min.segment.length = 0.1, seed = 42
+      inherit.aes = FALSE, size = 3.15, fontface = "bold", color = "grey15",
+      box.padding = 0.35, max.overlaps = 15, seed = 42
     ) +
-    scale_color_manual(values = c("Late Vigor" = "#00A087", "Early Vigor" = "#F39B7F")) +
-    scale_fill_manual(values = c("Late Vigor" = "#00A087", "Early Vigor" = "#F39B7F")) +
+    scale_color_manual(values = setNames(c("#F39B7F", "#00A087"), c(VIGOR_HI, VIGOR_LO))) +
+    scale_fill_manual(values = setNames(c("#F39B7F", "#00A087"), c(VIGOR_HI, VIGOR_LO))) +
     pub_theme +
-    theme(plot.subtitle = element_text(size = 8.8, color = "grey25", face = "bold", lineheight = 1.1)) +
-    labs(title = "B. Vigor Strategy",
+    theme(
+      plot.title = element_text(face = "bold", size = 13.5),
+      plot.subtitle = element_text(size = 9.5, color = "grey20", face = "bold", lineheight = 1.12),
+      axis.title = element_text(face = "bold", size = 11.5),
+      axis.text = element_text(face = "bold", size = 10.6, color = "black"),
+      legend.title = element_text(face = "bold", size = 11.4),
+      legend.text = element_text(face = "bold", size = 11.0),
+      legend.key.size = unit(0.65, "cm")
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 3.8, alpha = 1)), fill = guide_legend(override.aes = list(size = 3.8, alpha = 1))) +
+    labs(title = "B. Tillering Vigor Strategy",
          subtitle = sub_p2,
-         x = sprintf("Optimal Yield (%s)", YIELD_UNIT_LABEL),
-         y = sprintf("Acute Stress Yield (%s)", YIELD_UNIT_LABEL),
-         color = "Vigor:", fill = "Vigor:")
+         x = "NWPZ Baseline Yield (kg/plot)",
+         y = "PZ Warm II Yield (kg/plot)",
+         color = "Tillering Vigor:", fill = "Tillering Vigor:")
 
   p3_dyn <- ggplot(dyn_df, aes(x = Yield_Opt, y = Yield_Stress, color = Stability, fill = Stability)) +
     annotate("rect", xmin = pop_opt_mean, xmax = Inf, ymin = pop_str_mean, ymax = Inf, fill = "#2ca25f", alpha = 0.06) +
@@ -4945,35 +5281,267 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
     geom_hline(yintercept = pop_str_mean, linetype = "dotted", color = "grey50", linewidth = 0.5) +
     geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey60") +
     stat_ellipse(geom = "polygon", alpha = 0.14, level = 0.85, show.legend = FALSE) +
-    geom_point(size = 2.3, alpha = 0.65, shape = 21, stroke = 0.4, color = "black") +
+    geom_point(size = 2.4, alpha = 0.68, shape = 21, stroke = 0.4, color = "black") +
     geom_errorbar(data = cen_tsi, aes(x = mean_opt, ymin = mean_str - ci_str, ymax = mean_str + ci_str),
-                  inherit.aes = FALSE, color = "black", width = 0.012, linewidth = 0.85) +
-    geom_errorbarh(data = cen_tsi, aes(y = mean_str, xmin = mean_opt - ci_opt, xmax = mean_opt + ci_opt),
-                   inherit.aes = FALSE, color = "black", height = 0.012, linewidth = 0.85) +
+                  inherit.aes = FALSE, color = "black", width = 0.012, linewidth = 0.90) +
+    geom_errorbar(data = cen_tsi, aes(y = mean_str, xmin = mean_opt - ci_opt, xmax = mean_opt + ci_opt),
+                  inherit.aes = FALSE, color = "black", width = 0.012, linewidth = 0.90, orientation = "y") +
     geom_point(data = cen_tsi, aes(x = mean_opt, y = mean_str, fill = Stability),
                inherit.aes = FALSE, shape = 23, size = 4.6, stroke = 1.1, color = "black", show.legend = FALSE) +
     ggrepel::geom_text_repel(
       data = top_dual_genos,
       aes(x = Yield_Opt, y = Yield_Stress, label = Genotype),
-      inherit.aes = FALSE, size = 2.8, fontface = "bold", color = "grey15",
-      box.padding = 0.3, max.overlaps = 15, min.segment.length = 0.1, seed = 42
+      inherit.aes = FALSE, size = 3.15, fontface = "bold", color = "grey15",
+      box.padding = 0.35, max.overlaps = 15, seed = 42
     ) +
-    scale_color_manual(values = c("Stable" = "#3C5488", "Contrasting" = "#DC0000")) +
-    scale_fill_manual(values = c("Stable" = "#3C5488", "Contrasting" = "#DC0000")) +
+    scale_color_manual(
+      values = c("Stable" = "#3C5488", "Contrasting" = "#DC0000"),
+      labels = c("Stable" = "High TSI (\u2265 1.0)", "Contrasting" = "Low TSI (< 1.0)")
+    ) +
+    scale_fill_manual(
+      values = c("Stable" = "#3C5488", "Contrasting" = "#DC0000"),
+      labels = c("Stable" = "High TSI (\u2265 1.0)", "Contrasting" = "Low TSI (< 1.0)")
+    ) +
     pub_theme +
-    theme(plot.subtitle = element_text(size = 8.8, color = "grey25", face = "bold", lineheight = 1.1)) +
-    labs(title = "C. Tiller Stability Index (TSI)",
+    theme(
+      plot.title = element_text(face = "bold", size = 13.5),
+      plot.subtitle = element_text(size = 9.5, color = "grey20", face = "bold", lineheight = 1.12),
+      axis.title = element_text(face = "bold", size = 11.5),
+      axis.text = element_text(face = "bold", size = 10.6, color = "black"),
+      legend.title = element_text(face = "bold", size = 11.4),
+      legend.text = element_text(face = "bold", size = 11.0),
+      legend.key.size = unit(0.65, "cm")
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 3.8, alpha = 1)), fill = guide_legend(override.aes = list(size = 3.8, alpha = 1))) +
+    labs(title = "C. Productive-Tiller Stability Index (TSI_PZ_WarmII)",
          subtitle = sub_p3,
-         x = sprintf("Optimal Yield (%s)", YIELD_UNIT_LABEL),
-         y = sprintf("Acute Stress Yield (%s)", YIELD_UNIT_LABEL),
-         color = "TSI Class (Benchmark \u2265 1.0):", fill = "TSI Class (Benchmark \u2265 1.0):")
+         x = "NWPZ Baseline Yield (kg/plot)",
+         y = "PZ Warm II Yield (kg/plot)",
+         color = "TSI_PZ_WarmII Class:", fill = "TSI_PZ_WarmII Class:")
 
-  p_dyn_comp <- (p1_dyn | p2_dyn | p3_dyn) +
-    plot_annotation(
-      caption = "Diamonds (\u00B1 95% CI crosshairs) denote group centroids; shaded ellipses represent 85% bivariate data contours. Dotted lines mark population mean Optimal and Acute Stress yields (shaded upper-right quadrant = Dual-Resilient Elite Zone, with top 5 dual-yield genotypes labeled).",
-      theme = theme(plot.caption = element_text(size = 9.5, color = "grey30", face = "italic", hjust = 0))
+  # --- PANEL D: Master Strategy Profiles Frequency & Multi-Regime Yield Performance ---
+  dyn_prof_df <- dyn_df %>%
+    left_join(master_profiles %>% select(Genotype, Master_Profile, Master_Profile_Readable), by = "Genotype")
+
+  aov_prof_opt <- summary(aov(Yield_Opt ~ Master_Profile, data = dyn_prof_df))[[1]]
+  f_prof_opt   <- aov_prof_opt["Master_Profile", "F value"]
+  p_prof_opt   <- aov_prof_opt["Master_Profile", "Pr(>F)"]
+
+  aov_prof_nw  <- summary(aov(Yield_NWPZ_Warm ~ Master_Profile, data = dyn_prof_df))[[1]]
+  f_prof_nw    <- aov_prof_nw["Master_Profile", "F value"]
+  p_prof_nw    <- aov_prof_nw["Master_Profile", "Pr(>F)"]
+
+  aov_prof_str <- car::Anova(lm(Yield_Stress ~ Master_Profile + factor(Field_Pos_Block_DhwS2), data = dyn_prof_df), type = "II")
+  f_prof_str   <- aov_prof_str["Master_Profile", "F value"]
+  p_prof_str   <- aov_prof_str["Master_Profile", "Pr(>F)"]
+
+  cluster_summary <- dyn_prof_df %>%
+    group_by(Master_Profile, Master_Profile_Readable) %>%
+    summarise(
+      n = n(),
+      Pct = round(100 * n() / nrow(dyn_prof_df), 1),
+      Mean_Yield_NWPZ_Baseline = round(mean(Yield_Opt, na.rm = TRUE), 3),
+      SE_Yield_NWPZ_Baseline   = round(sd(Yield_Opt, na.rm = TRUE) / sqrt(n()), 3),
+      Mean_Yield_NWPZ_Warm     = round(mean(Yield_NWPZ_Warm, na.rm = TRUE), 3),
+      SE_Yield_NWPZ_Warm       = round(sd(Yield_NWPZ_Warm, na.rm = TRUE) / sqrt(n()), 3),
+      Mean_Yield_PZ_Warm_II    = round(mean(Yield_Stress, na.rm = TRUE), 3),
+      SE_Yield_PZ_Warm_II      = round(sd(Yield_Stress, na.rm = TRUE) / sqrt(n()), 3),
+      Mean_Yield_3Regime_Avg   = round(mean((Yield_Opt + Yield_NWPZ_Warm + Yield_Stress) / 3, na.rm = TRUE), 3),
+      .groups = "drop"
+    ) %>%
+    arrange(desc(Mean_Yield_NWPZ_Baseline)) %>%
+    mutate(
+      Strategy_Code      = sprintf("S%d", row_number()),
+      Rank_NWPZ_Baseline = rank(-Mean_Yield_NWPZ_Baseline, ties.method = "first"),
+      Rank_NWPZ_Warm     = rank(-Mean_Yield_NWPZ_Warm, ties.method = "first"),
+      Rank_PZ_Warm_II    = rank(-Mean_Yield_PZ_Warm_II, ties.method = "first"),
+      Rank_3Regime_Avg   = rank(-Mean_Yield_3Regime_Avg, ties.method = "first"),
+      Baseline_Yield_Rank = Rank_NWPZ_Baseline,
+      Regime_Shift_Interpretation = case_when(
+        Master_Profile == "Lat-HiVig-Cont" ~ "#1 in NWPZ Baseline (0.838) & NWPZ Warm (0.756), but drops to #5 in PZ Warm II (0.488) due to low productive-tiller stability (TSI < 1.0)",
+        Master_Profile == "Lat-HiVig-Stab" ~ "#1 in PZ Warm II (0.621) via high productive-tiller stability (TSI >= 1.0) combined with high tillering vigor",
+        Master_Profile == "Lat-LoVig-Stab" ~ "#2 in PZ Warm II (0.599); moderate vegetative investment with high productive-tiller stability (TSI >= 1.0) buffers peninsular heat",
+        Master_Profile == "Ear-HiVig-Stab" ~ "#3 in PZ Warm II (0.598) & #2 in 3-regime average (0.637); high-TSI early-vigor generalist",
+        Master_Profile == "Ear-LoVig-Stab" ~ "#4 in PZ Warm II (0.580) & #3 in NWPZ Warm (0.672); resilient low-vigor, high-TSI profile",
+        Master_Profile == "Ear-HiVig-Cont" ~ "#2 in NWPZ Baseline (0.763), but drops to #6 in PZ Warm II (0.475)",
+        Master_Profile == "Lat-LoVig-Cont" ~ "#3 in NWPZ Baseline (0.748) & #2 in NWPZ Warm (0.704), but drops to #7 in PZ Warm II (0.445)",
+        TRUE                               ~ "Lowest across stress regimes (#8 in PZ Warm II, 0.405)"
+      ),
+      ANOVA_Omnibus_Notes = sprintf(
+        "8-Profile ANOVA: NWPZ Baseline F(7,192)=%.2f (%s); NWPZ Warm F(7,192)=%.2f (%s); PZ Warm II Pos-Adj F(7,173)=%.2f (%s)",
+        f_prof_opt, format_p_stat(p_prof_opt), f_prof_nw, format_p_stat(p_prof_nw), f_prof_str, format_p_stat(p_prof_str)
+      )
     )
-  ggsave(file.path(sec25_dir, "Figure_Strategy_Yield_Dynamics_Complete.png"), plot = p_dyn_comp, width = 18.5, height = 7.0, dpi = 600)
+
+  write.csv(cluster_summary, file.path(sec25_dir, "Table_S11_Master_Strategy_Profile_Yield_Performance.csv"), row.names = FALSE)
+  write.csv(
+    cluster_summary %>% select(
+      Strategy_Code, Master_Profile, Master_Profile_Readable, n, Pct,
+      Rank_NWPZ_Baseline, Mean_Yield_NWPZ_Baseline, SE_Yield_NWPZ_Baseline,
+      Rank_NWPZ_Warm, Mean_Yield_NWPZ_Warm, SE_Yield_NWPZ_Warm,
+      Rank_PZ_Warm_II, Mean_Yield_PZ_Warm_II, SE_Yield_PZ_Warm_II,
+      Rank_3Regime_Avg, Mean_Yield_3Regime_Avg,
+      Regime_Shift_Interpretation, ANOVA_Omnibus_Notes
+    ),
+    file.path(sec25_dir, "Table_6_Strategy_Profile_Regime_Rankings.csv"),
+    row.names = FALSE
+  )
+
+  prof_order_d <- rev(sprintf("%s\n(n = %d, %.1f%%)", cluster_summary$Master_Profile_Readable, cluster_summary$n, cluster_summary$Pct))
+  prof_order_full_1line <- rev(sprintf("%s (n = %d, %.1f%%)", cluster_summary$Master_Profile_Readable, cluster_summary$n, cluster_summary$Pct))
+  prof_order_short      <- rev(sprintf("%s (n = %d, %.1f%%)", cluster_summary$Strategy_Code, cluster_summary$n, cluster_summary$Pct))
+
+  p4_long_df <- cluster_summary %>%
+    mutate(
+      Profile_Label       = factor(sprintf("%s\n(n = %d, %.1f%%)", Master_Profile_Readable, n, Pct), levels = prof_order_d),
+      Profile_Label_Full  = factor(sprintf("%s (n = %d, %.1f%%)", Master_Profile_Readable, n, Pct), levels = prof_order_full_1line),
+      Profile_Label_Short = factor(sprintf("%s (n = %d, %.1f%%)", Strategy_Code, n, Pct), levels = prof_order_short)
+    ) %>%
+    select(
+      Strategy_Code, Master_Profile, Master_Profile_Readable, Profile_Label, Profile_Label_Full, Profile_Label_Short, n, Pct,
+      `NWPZ Baseline` = Mean_Yield_NWPZ_Baseline,
+      `NWPZ Warm`     = Mean_Yield_NWPZ_Warm,
+      `PZ Warm II`    = Mean_Yield_PZ_Warm_II,
+      SE_Opt = SE_Yield_NWPZ_Baseline,
+      SE_NW  = SE_Yield_NWPZ_Warm,
+      SE_Str = SE_Yield_PZ_Warm_II,
+      Rk_Opt = Rank_NWPZ_Baseline,
+      Rk_NW  = Rank_NWPZ_Warm,
+      Rk_Str = Rank_PZ_Warm_II
+    ) %>%
+    pivot_longer(
+      cols = c(`NWPZ Baseline`, `NWPZ Warm`, `PZ Warm II`),
+      names_to = "Regime",
+      values_to = "Mean_Yield"
+    ) %>%
+    mutate(
+      SE_Yield = case_when(
+        Regime == "NWPZ Baseline" ~ SE_Opt,
+        Regime == "NWPZ Warm"     ~ SE_NW,
+        TRUE                      ~ SE_Str
+      ),
+      Within_Regime_Rank = case_when(
+        Regime == "NWPZ Baseline" ~ Rk_Opt,
+        Regime == "NWPZ Warm"     ~ Rk_NW,
+        TRUE                      ~ Rk_Str
+      ),
+      Point_Label = ifelse(
+        Within_Regime_Rank == 1L,
+        sprintf("%.2f [#1 \u2605]", Mean_Yield),
+        sprintf("%.2f [#%d]", Mean_Yield, Within_Regime_Rank)
+      ),
+      Regime = factor(Regime, levels = c("PZ Warm II", "NWPZ Warm", "NWPZ Baseline"))
+    )
+
+  sub_p4 <- sprintf(
+    "ANOVA: NWPZ Base F=%.2f (p=0.0018**) | NWPZ Warm F=%.2f (p=0.025*) | PZ Warm II F=%.2f (p<0.0001***)",
+    f_prof_opt, f_prof_nw, f_prof_str
+  )
+
+  p4_comp <- ggplot(p4_long_df, aes(x = Mean_Yield, y = Profile_Label, color = Regime, group = Regime)) +
+    geom_vline(xintercept = c(mean(dyn_prof_df$Yield_Opt), mean(dyn_prof_df$Yield_NWPZ_Warm), mean(dyn_prof_df$Yield_Stress)),
+               linetype = "dotted", color = c("#3C5488", "#00A087", "#E64B35"), linewidth = 0.60, alpha = 0.75) +
+    geom_errorbar(aes(xmin = Mean_Yield - SE_Yield, xmax = Mean_Yield + SE_Yield),
+                  position = position_dodge(width = 0.78), width = 0.30, linewidth = 0.75, orientation = "y") +
+    geom_point(aes(size = Within_Regime_Rank == 1L), position = position_dodge(width = 0.78), show.legend = FALSE) +
+    geom_point(position = position_dodge(width = 0.78), size = 2.85) +
+    geom_text(
+      aes(x = Mean_Yield + SE_Yield + 0.008, label = Point_Label,
+          fontface = ifelse(Within_Regime_Rank <= 2L, "bold", "plain")),
+      position = position_dodge(width = 0.78), hjust = 0, size = 2.95, show.legend = FALSE
+    ) +
+    scale_size_manual(values = c("FALSE" = 2.85, "TRUE" = 4.0)) +
+    scale_color_manual(
+      values = c(
+        "NWPZ Baseline" = "#3C5488",
+        "NWPZ Warm"     = "#00A087",
+        "PZ Warm II"    = "#E64B35"
+      ),
+      breaks = c("NWPZ Baseline", "NWPZ Warm", "PZ Warm II"),
+      name = "Regime:"
+    ) +
+    scale_x_continuous(breaks = seq(0.40, 0.90, by = 0.10)) +
+    coord_cartesian(xlim = c(0.36, 1.03), clip = "off") +
+    pub_theme +
+    theme(
+      axis.text.y = element_text(face = "bold", size = 9.4, lineheight = 0.94, color = "black"),
+      axis.text.x = element_text(face = "bold", size = 10.6, color = "black"),
+      axis.title = element_text(face = "bold", size = 11.5),
+      plot.title = element_text(face = "bold", size = 13.5),
+      plot.subtitle = element_text(size = 8.8, color = "grey20", face = "bold", lineheight = 1.12),
+      legend.title = element_text(face = "bold", size = 11.4),
+      legend.text = element_text(face = "bold", size = 11.0),
+      legend.key.size = unit(0.65, "cm")
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 3.8, linewidth = 1.1))) +
+    labs(
+      title = "D. Composite Strategy Frequency & Multi-Regime Yield Rankings",
+      subtitle = sub_p4,
+      x = "Mean Grain Yield \u00B1 SE (kg/plot)",
+      y = "Composite Strategy (Trajectory | Vigor | TSI)"
+    )
+
+  fig_strategy_4panel <- (p1_dyn | p2_dyn) / (p3_dyn | p4_comp) +
+    plot_annotation(
+      caption = paste0(
+        "Panels A\u2013C: Bivariate grain yield distributions comparing NWPZ Baseline against PZ Warm II across Vegetative Tillering Trajectory (A), Tillering Vigor (B), and Productive-Tiller Stability Index (TSI_PZ_WarmII, C).\n",
+        "Panel D: Genotype frequency (n, %) and multi-regime grain yield performance (Mean \u00B1 SE, with within-regime rank [#1\u2013#8], \u2605 = regime winner) across the 8 composite strategies, ordered by NWPZ Baseline yield.\n",
+        "Note: TSI = (PT_Stress / PT_Baseline) \u00D7 (PT_Stress / Mean_PT_Stress) combines cross-regime productive-tiller retention with relative stress spike realization."
+      ),
+      theme = theme(plot.caption = element_text(size = 9.8, color = "grey25", face = "italic", hjust = 0, lineheight = 1.15))
+    )
+
+  ggsave(file.path(sec25_dir, "Figure_Strategy_Yield_Dynamics_Complete_v2.png"),
+         plot = fig_strategy_4panel, width = 16.8, height = 13.4, dpi = 600)
+
+  # --- Companion Figure: Explicit Regime-by-Regime Strategy Ranking & Rank Reversal Plot ---
+  rank_facet_df <- p4_long_df %>%
+    mutate(
+      Regime_Facet = factor(Regime, levels = c("NWPZ Baseline", "NWPZ Warm", "PZ Warm II")),
+      Stability_Group = factor(
+        ifelse(grepl("Stab$", Master_Profile), "High TSI (TSI \u2265 1.0)", "Low TSI (TSI < 1.0)"),
+        levels = c("High TSI (TSI \u2265 1.0)", "Low TSI (TSI < 1.0)")
+      ),
+      Bar_Label = sprintf("#%d: %.2f \u00B1 %.2f", Within_Regime_Rank, Mean_Yield, SE_Yield)
+    )
+
+  p_rank_opt1 <- ggplot(rank_facet_df, aes(x = Mean_Yield, y = Profile_Label_Full, fill = Stability_Group)) +
+    geom_col(width = 0.68, color = "black", linewidth = 0.40, alpha = 0.90) +
+    geom_errorbar(aes(xmin = Mean_Yield - SE_Yield, xmax = Mean_Yield + SE_Yield),
+                  width = 0.26, linewidth = 0.72, color = "grey15", orientation = "y") +
+    geom_text(
+      aes(x = Mean_Yield + SE_Yield + 0.014, label = Bar_Label,
+          fontface = ifelse(Within_Regime_Rank <= 2L, "bold", "plain")),
+      hjust = 0, size = 3.55, color = "grey10"
+    ) +
+    facet_wrap(~ Regime_Facet, nrow = 1) +
+    scale_fill_manual(
+      values = c("High TSI (TSI \u2265 1.0)" = "#3C5488", "Low TSI (TSI < 1.0)" = "#E64B35"),
+      name = "Productive-Tiller Stability Index (TSI):"
+    ) +
+    scale_x_continuous(breaks = seq(0, 1.0, by = 0.25), limits = c(0, 1.22), expand = c(0, 0)) +
+    pub_theme +
+    theme(
+      axis.ticks.length.y = unit(0.08, "cm"),
+      axis.text.y = element_text(face = "bold", size = 10.4, color = "black", hjust = 1, margin = margin(r = 1)),
+      axis.text.x = element_text(face = "bold", size = 10.4, color = "black"),
+      axis.title.x = element_text(face = "bold", size = 11.8, color = "black", margin = margin(t = 6)),
+      axis.title.y = element_text(face = "bold", size = 10.2, color = "black", hjust = 0.5, margin = margin(r = 18)),
+      strip.text = element_text(face = "bold", size = 12.6, color = "black"),
+      plot.title = element_text(face = "bold", size = 14.2, hjust = 0, margin = margin(b = 6)),
+      legend.title = element_text(face = "bold", size = 11.4),
+      legend.text = element_text(face = "bold", size = 11.0),
+      legend.key.size = unit(0.65, "cm"),
+      plot.margin = margin(8, 14, 6, 16)
+    ) +
+    labs(
+      title = "Regime-Specific Yield Rankings Across the 8 Composite Phenological Strategies",
+      x = "Mean Grain Yield \u00B1 SE (kg/plot)",
+      y = "Composite Strategy [Trajectory | Vigor | TSI] (Ordered by Baseline Yield)"
+    )
+
+  ggsave(file.path(sec25_dir, "Figure_Strategy_Regime_Rankings_Comparison.png"),
+         plot = p_rank_opt1, width = 16.5, height = 6.2, dpi = 600)
 
   # 7.3 Cluster-Free Sensitivity Check: Multiple Linear Regressions on Continuous Shape
   opt_shape_df <- blues_df %>% filter(Environment == "NWPZ Baseline") %>%
@@ -4998,14 +5566,57 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
   f_stat_pca <- s_cont_pca$fstatistic
   p_val_pca  <- pf(f_stat_pca[1], f_stat_pca[2], f_stat_pca[3], lower.tail = FALSE)
 
+  # Continuous Shape Regressions on NWPZ Warm (Randomized Delhi Heat) & PZ Warm II (Descriptive)
+  dyn_df$T1_rel    <- opt_shape_df$T1_rel[match(dyn_df$Genotype, opt_shape_df$Genotype)]
+  dyn_df$T2_rel    <- opt_shape_df$T2_rel[match(dyn_df$Genotype, opt_shape_df$Genotype)]
+  dyn_df$T3_rel    <- opt_shape_df$T3_rel[match(dyn_df$Genotype, opt_shape_df$Genotype)]
+  dyn_df$PC1_shape <- opt_shape_df$PC1_shape[match(dyn_df$Genotype, opt_shape_df$Genotype)]
+  dyn_df$PC2_shape <- opt_shape_df$PC2_shape[match(dyn_df$Genotype, opt_shape_df$Genotype)]
+
+  m_r_nw  <- lm(Yield_NWPZ_Warm ~ T1_rel + T2_rel + T3_rel, data = dyn_df)
+  s_r_nw  <- summary(m_r_nw); f_r_nw <- s_r_nw$fstatistic; p_r_nw <- pf(f_r_nw[1], f_r_nw[2], f_r_nw[3], lower.tail = FALSE)
+
+  m_p_nw  <- lm(Yield_NWPZ_Warm ~ PC1_shape + PC2_shape, data = dyn_df)
+  s_p_nw  <- summary(m_p_nw); f_p_nw <- s_p_nw$fstatistic; p_p_nw <- pf(f_p_nw[1], f_p_nw[2], f_p_nw[3], lower.tail = FALSE)
+
+  m_r_str <- lm(Yield_Stress ~ T1_rel + T2_rel + T3_rel, data = dyn_df)
+  s_r_str <- summary(m_r_str)
+  f_r_str <- s_r_str$fstatistic
+  p_r_str <- pf(f_r_str[1], f_r_str[2], f_r_str[3], lower.tail = FALSE)
+
+  m_p_str <- lm(Yield_Stress ~ PC1_shape + PC2_shape, data = dyn_df)
+  s_p_str <- summary(m_p_str)
+  f_p_str <- s_p_str$fstatistic
+  p_p_str <- pf(f_p_str[1], f_p_str[2], f_p_str[3], lower.tail = FALSE)
+
+  m_base_pos <- lm(Yield_Stress ~ factor(Field_Pos_Block_DhwS2), data = dyn_df)
+  m_pos_r    <- lm(Yield_Stress ~ factor(Field_Pos_Block_DhwS2) + T1_rel + T2_rel + T3_rel, data = dyn_df)
+  an_r       <- anova(m_base_pos, m_pos_r)
+  delta_r2_r <- summary(m_pos_r)$r.squared - summary(m_base_pos)$r.squared
+  f_pos_r    <- an_r$F[2]
+  p_pos_r    <- an_r$`Pr(>F)`[2]
+
+  m_pos_p    <- lm(Yield_Stress ~ factor(Field_Pos_Block_DhwS2) + PC1_shape + PC2_shape, data = dyn_df)
+  an_p       <- anova(m_base_pos, m_pos_p)
+  delta_r2_p <- summary(m_pos_p)$r.squared - summary(m_base_pos)$r.squared
+  f_pos_p    <- an_p$F[2]
+  p_pos_p    <- an_p$`Pr(>F)`[2]
+
   reg_summary_table <- data.frame(
-    Model = c("Shape Ratios: Yield_Opt ~ T1/T4 + T2/T4 + T3/T4", "Shape PCA: Yield_Opt ~ PC1_shape + PC2_shape"),
-    R_Squared = c(s_cont_ratios$r.squared, s_cont_pca$r.squared),
-    Adj_R_Squared = c(s_cont_ratios$adj.r.squared, s_cont_pca$adj.r.squared),
-    F_Statistic = c(f_stat_r[1], f_stat_pca[1]),
-    DF_Num = as.integer(c(f_stat_r[2], f_stat_pca[2])),
-    DF_Den = as.integer(c(f_stat_r[3], f_stat_pca[3])),
-    p_value = c(p_val_r, p_val_pca)
+    Model = c(
+      "Proportional Tillering Ratios: Yield_Opt ~ T1/T4 + T2/T4 + T3/T4 (NWPZ Baseline)",
+      "Proportional Tillering PCA: Yield_Opt ~ PC1_traj + PC2_traj (NWPZ Baseline)",
+      "Proportional Tillering Ratios: Yield_NWPZ_Warm ~ T1/T4 + T2/T4 + T3/T4 (NWPZ Warm)",
+      "Proportional Tillering PCA: Yield_NWPZ_Warm ~ PC1_traj + PC2_traj (NWPZ Warm)",
+      "Proportional Tillering Ratios: Yield_Stress ~ T1/T4 + T2/T4 + T3/T4 (PZ Warm II Descriptive)",
+      "Proportional Tillering PCA: Yield_Stress ~ PC1_traj + PC2_traj (PZ Warm II Descriptive)"
+    ),
+    R_Squared = c(s_cont_ratios$r.squared, s_cont_pca$r.squared, s_r_nw$r.squared, s_p_nw$r.squared, s_r_str$r.squared, s_p_str$r.squared),
+    Adj_R_Squared = c(s_cont_ratios$adj.r.squared, s_cont_pca$adj.r.squared, s_r_nw$adj.r.squared, s_p_nw$adj.r.squared, s_r_str$adj.r.squared, s_p_str$adj.r.squared),
+    F_Statistic = c(f_stat_r[1], f_stat_pca[1], f_r_nw[1], f_p_nw[1], f_r_str[1], f_p_str[1]),
+    DF_Num = as.integer(c(f_stat_r[2], f_stat_pca[2], f_r_nw[2], f_p_nw[2], f_r_str[2], f_p_str[2])),
+    DF_Den = as.integer(c(f_stat_r[3], f_stat_pca[3], f_r_nw[3], f_p_nw[3], f_r_str[3], f_p_str[3])),
+    p_value = c(p_val_r, p_val_pca, p_r_nw, p_p_nw, p_r_str, p_p_str)
   )
   write.csv(reg_summary_table, file.path(sec25_dir, "Table_Cluster_Free_Shape_Regression.csv"), row.names = FALSE)
 
@@ -5021,12 +5632,16 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
   dyn_df$Raw_Tiller_Class <- factor(raw_class_names[km_raw_sec$cluster], levels = c("Higher Tiller Number", "Lower Tiller Number"))
 
   t_raw_opt <- t.test(Yield_Opt ~ Raw_Tiller_Class, data = dyn_df)
+  t_raw_nw  <- t.test(Yield_NWPZ_Warm ~ Raw_Tiller_Class, data = dyn_df)
   t_raw_str <- t.test(Yield_Stress ~ Raw_Tiller_Class, data = dyn_df)
   anc_raw   <- fit_pos_ancova(dyn_df, "Raw_Tiller_Class")
   diff_raw_opt <- t_raw_opt$estimate[1] - t_raw_opt$estimate[2]
+  diff_raw_nw  <- t_raw_nw$estimate[1] - t_raw_nw$estimate[2]
   diff_raw_str <- t_raw_str$estimate[1] - t_raw_str$estimate[2]
   d_raw_opt <- cohen_d(dyn_df$Yield_Opt[dyn_df$Raw_Tiller_Class == "Higher Tiller Number"],
                        dyn_df$Yield_Opt[dyn_df$Raw_Tiller_Class == "Lower Tiller Number"])
+  d_raw_nw  <- cohen_d(dyn_df$Yield_NWPZ_Warm[dyn_df$Raw_Tiller_Class == "Higher Tiller Number"],
+                       dyn_df$Yield_NWPZ_Warm[dyn_df$Raw_Tiller_Class == "Lower Tiller Number"])
   d_raw_str <- cohen_d(dyn_df$Yield_Stress[dyn_df$Raw_Tiller_Class == "Higher Tiller Number"],
                        dyn_df$Yield_Stress[dyn_df$Raw_Tiller_Class == "Lower Tiller Number"])
 
@@ -5039,6 +5654,9 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
     Optimal_df = t_raw_opt$parameter,
     Optimal_p = t_raw_opt$p.value,
     Optimal_d = d_raw_opt,
+    NWPZ_Warm_Mean_Diff = diff_raw_nw,
+    NWPZ_Warm_p = t_raw_nw$p.value,
+    NWPZ_Warm_d = d_raw_nw,
     Stress_Mean_Diff = diff_raw_str,
     Stress_CI_Lower = t_raw_str$conf.int[1],
     Stress_CI_Upper = t_raw_str$conf.int[2],
@@ -5059,12 +5677,16 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
                              levels = c("Higher Conversion", "Lower Conversion"))
 
   t_tce_opt <- t.test(Yield_Opt ~ TCE_Class, data = dyn_df)
+  t_tce_nw  <- t.test(Yield_NWPZ_Warm ~ TCE_Class, data = dyn_df)
   t_tce_str <- t.test(Yield_Stress ~ TCE_Class, data = dyn_df)
   anc_tce   <- fit_pos_ancova(dyn_df, "TCE_Class")
   diff_tce_opt <- t_tce_opt$estimate[1] - t_tce_opt$estimate[2]
+  diff_tce_nw  <- t_tce_nw$estimate[1] - t_tce_nw$estimate[2]
   diff_tce_str <- t_tce_str$estimate[1] - t_tce_str$estimate[2]
   d_tce_opt <- cohen_d(dyn_df$Yield_Opt[dyn_df$TCE_Class == "Higher Conversion"],
                        dyn_df$Yield_Opt[dyn_df$TCE_Class == "Lower Conversion"])
+  d_tce_nw  <- cohen_d(dyn_df$Yield_NWPZ_Warm[dyn_df$TCE_Class == "Higher Conversion"],
+                       dyn_df$Yield_NWPZ_Warm[dyn_df$TCE_Class == "Lower Conversion"])
   d_tce_str <- cohen_d(dyn_df$Yield_Stress[dyn_df$TCE_Class == "Higher Conversion"],
                        dyn_df$Yield_Stress[dyn_df$TCE_Class == "Lower Conversion"])
 
@@ -5077,6 +5699,9 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
     Optimal_df = t_tce_opt$parameter,
     Optimal_p = t_tce_opt$p.value,
     Optimal_d = d_tce_opt,
+    NWPZ_Warm_Mean_Diff = diff_tce_nw,
+    NWPZ_Warm_p = t_tce_nw$p.value,
+    NWPZ_Warm_d = d_tce_nw,
     Stress_Mean_Diff = diff_tce_str,
     Stress_CI_Lower = t_tce_str$conf.int[1],
     Stress_CI_Upper = t_tce_str$conf.int[2],
@@ -5090,14 +5715,14 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
   )
   write.csv(tce_summary_table, file.path(sec25_dir, "Table_Secondary_TCE_Yield.csv"), row.names = FALSE)
 
-  # 7.5 Side-by-Side Statistical Comparison Table (With Dharwad Position-Adjusted Stress ANCOVA)
+  # 7.5 Side-by-Side Statistical Comparison Table (Including Delhi NWPZ Warm & Dharwad Position-Adjusted Stress ANCOVA)
   side_by_side_table <- data.frame(
     Analysis = c(
-      "Primary: Trajectory Shape Clusters (Earlier vs Later Proportional Peak)",
-      "Primary: Vegetative Vigor Clusters (Early vs Late Vigor)",
+      "Primary: Vegetative Tillering Trajectory Clusters (Earlier vs Later Proportional Peak)",
+      sprintf("Primary: Tillering Vigor Clusters (%s vs %s)", VIGOR_HI, VIGOR_LO),
       "Primary: Tiller Stability Index Classes (Stable vs Contrasting)",
-      "Continuous Check: Shape Ratios (T1/T4, T2/T4, T3/T4)",
-      "Continuous Check: Shape PCA (PC1_shape, PC2_shape)",
+      "Continuous Check: Proportional Tillering Ratios (T1/T4, T2/T4, T3/T4)",
+      "Continuous Check: Proportional Tillering PCA (PC1_traj, PC2_traj)",
       "Secondary (a): Tiller Number Classes (Raw Counts)",
       "Secondary (b): Tiller Conversion Efficiency (TCE)"
     ),
@@ -5112,10 +5737,10 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
     ),
     Predictors = c(
       "Earlier Peak vs Later Peak",
-      "Early Vigor vs Late Vigor",
+      sprintf("%s vs %s", VIGOR_HI, VIGOR_LO),
       "Stable vs Contrasting",
       "T1/T4 + T2/T4 + T3/T4",
-      "PC1_shape + PC2_shape",
+      "PC1_traj + PC2_traj",
       "Higher vs Lower Tiller Number",
       "Higher vs Lower Conversion"
     ),
@@ -5146,12 +5771,39 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
       format_p_display(t_raw_opt$p.value),
       format_p_display(t_tce_opt$p.value)
     ),
+    NWPZ_Warm_Stat = c(
+      sprintf("t(%.1f) = %.2f", t_traj_nw$parameter, t_traj_nw$statistic),
+      sprintf("t(%.1f) = %.2f", t_vig_nw$parameter, t_vig_nw$statistic),
+      sprintf("t(%.1f) = %.2f", t_tsi_nw$parameter, t_tsi_nw$statistic),
+      sprintf("F(%d, %d) = %.2f", f_r_nw[2], f_r_nw[3], f_r_nw[1]),
+      sprintf("F(%d, %d) = %.2f", f_p_nw[2], f_p_nw[3], f_p_nw[1]),
+      sprintf("t(%.1f) = %.2f", t_raw_nw$parameter, t_raw_nw$statistic),
+      sprintf("t(%.1f) = %.2f", t_tce_nw$parameter, t_tce_nw$statistic)
+    ),
+    NWPZ_Warm_Effect = c(
+      sprintf("diff = %+.4f %s (d = %.2f)", diff_traj_nw, YIELD_UNIT_LABEL, d_traj_nw),
+      sprintf("diff = %+.4f %s (d = %.2f)", diff_vig_nw, YIELD_UNIT_LABEL, d_vig_nw),
+      sprintf("diff = %+.4f %s (d = %.2f)", diff_tsi_nw, YIELD_UNIT_LABEL, d_tsi_nw),
+      sprintf("R² = %.4f (Adj R² = %.4f)", s_r_nw$r.squared, s_r_nw$adj.r.squared),
+      sprintf("R² = %.4f (Adj R² = %.4f)", s_p_nw$r.squared, s_p_nw$adj.r.squared),
+      sprintf("diff = %+.4f %s (d = %.2f)", diff_raw_nw, YIELD_UNIT_LABEL, d_raw_nw),
+      sprintf("diff = %+.4f %s (d = %.2f)", diff_tce_nw, YIELD_UNIT_LABEL, d_tce_nw)
+    ),
+    NWPZ_Warm_p = c(
+      format_p_display(t_traj_nw$p.value),
+      format_p_display(t_vig_nw$p.value),
+      format_p_display(t_tsi_nw$p.value),
+      format_p_display(p_r_nw),
+      format_p_display(p_p_nw),
+      format_p_display(t_raw_nw$p.value),
+      format_p_display(t_tce_nw$p.value)
+    ),
     Stress_Stat = c(
       sprintf("t(%.1f) = %.2f", t_traj_str$parameter, t_traj_str$statistic),
       sprintf("t(%.1f) = %.2f", t_vig_str$parameter, t_vig_str$statistic),
       sprintf("t(%.1f) = %.2f", t_tsi_str$parameter, t_tsi_str$statistic),
-      "N/A",
-      "N/A",
+      sprintf("F(%d, %d) = %.2f", f_r_str[2], f_r_str[3], f_r_str[1]),
+      sprintf("F(%d, %d) = %.2f", f_p_str[2], f_p_str[3], f_p_str[1]),
       sprintf("t(%.1f) = %.2f", t_raw_str$parameter, t_raw_str$statistic),
       sprintf("t(%.1f) = %.2f", t_tce_str$parameter, t_tce_str$statistic)
     ),
@@ -5159,8 +5811,8 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
       sprintf("diff = %+.4f %s (d = %.2f)", diff_traj_str, YIELD_UNIT_LABEL, d_traj_str),
       sprintf("diff = %+.4f %s (d = %.2f)", diff_vig_str, YIELD_UNIT_LABEL, d_vig_str),
       sprintf("diff = %+.4f %s (d = %.2f)", diff_tsi_str, YIELD_UNIT_LABEL, d_tsi_str),
-      "N/A",
-      "N/A",
+      sprintf("R² = %.4f (Adj R² = %.4f)", s_r_str$r.squared, s_r_str$adj.r.squared),
+      sprintf("R² = %.4f (Adj R² = %.4f)", s_p_str$r.squared, s_p_str$adj.r.squared),
       sprintf("diff = %+.4f %s (d = %.2f)", diff_raw_str, YIELD_UNIT_LABEL, d_raw_str),
       sprintf("diff = %+.4f %s (d = %.2f)", diff_tce_str, YIELD_UNIT_LABEL, d_tce_str)
     ),
@@ -5168,8 +5820,8 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
       format_p_display(t_traj_str$p.value),
       format_p_display(t_vig_str$p.value),
       format_p_display(t_tsi_str$p.value),
-      "N/A",
-      "N/A",
+      format_p_display(p_r_str),
+      format_p_display(p_p_str),
       format_p_display(t_raw_str$p.value),
       format_p_display(t_tce_str$p.value)
     ),
@@ -5177,8 +5829,8 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
       sprintf("adj diff = %+.4f %s", anc_traj$diff_adj, YIELD_UNIT_LABEL),
       sprintf("adj diff = %+.4f %s", anc_vig$diff_adj, YIELD_UNIT_LABEL),
       sprintf("adj diff = %+.4f %s", anc_tsi$diff_adj, YIELD_UNIT_LABEL),
-      "N/A",
-      "N/A",
+      sprintf("ΔR² = %+.4f (F = %.2f)", delta_r2_r, f_pos_r),
+      sprintf("ΔR² = %+.4f (F = %.2f)", delta_r2_p, f_pos_p),
       sprintf("adj diff = %+.4f %s", anc_raw$diff_adj, YIELD_UNIT_LABEL),
       sprintf("adj diff = %+.4f %s", anc_tce$diff_adj, YIELD_UNIT_LABEL)
     ),
@@ -5186,8 +5838,8 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
       format_p_display(anc_traj$p_adj),
       format_p_display(anc_vig$p_adj),
       format_p_display(anc_tsi$p_adj),
-      "N/A",
-      "N/A",
+      format_p_display(p_pos_r),
+      format_p_display(p_pos_p),
       format_p_display(anc_raw$p_adj),
       format_p_display(anc_tce$p_adj)
     ),
@@ -5195,6 +5847,23 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
   )
 
   write.csv(side_by_side_table, file.path(sec25_dir, "Table_Trajectory_and_Secondary_Analyses_Side_by_Side.csv"), row.names = FALSE)
+
+  if (requireNamespace("openxlsx", quietly = TRUE)) {
+    wb_sec25 <- openxlsx::createWorkbook()
+    for (sh25 in list(
+      list(name = "Table_6_Strategy_Regime_Ranks", data = cluster_summary),
+      list(name = "Table_S11A_Side_by_Side_Tests", data = side_by_side_table),
+      list(name = "Table_S11B_Cluster_Free_Regr", data = reg_summary_table),
+      list(name = "Table_S11C_Secondary_TillerNum", data = raw_summary_table),
+      list(name = "Table_S11D_Secondary_TCE", data = tce_summary_table)
+    )) {
+      openxlsx::addWorksheet(wb_sec25, sh25$name)
+      openxlsx::writeDataTable(wb_sec25, sh25$name, sh25$data, withFilter = TRUE)
+      openxlsx::freezePane(wb_sec25, sh25$name, firstRow = TRUE)
+      openxlsx::setColWidths(wb_sec25, sh25$name, cols = seq_len(ncol(sh25$data)), widths = "auto")
+    }
+    openxlsx::saveWorkbook(wb_sec25, file.path(sec25_dir, "Section_2.5_Manuscript_and_Supplementary_Tables.xlsx"), overwrite = TRUE)
+  }
 
   cat("\n==============================================================================\n")
   cat("SIDE-BY-SIDE STATISTICAL COMPARISON TABLE: TRAJECTORY & SECONDARY ANALYSES\n")
@@ -5207,770 +5876,1457 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
 
 
 # ==============================================================================
+# ==============================================================================
 # SECTION 8: VARIANCE PARTITIONING, HERITABILITY & FINLAY-WILKINSON PLASTICITY
 # ==============================================================================
 cat(">>> Executing Section 8: Variance Partitioning, Heritability & FW Modeling...\n")
 
 if (isTRUE(RUN_SECTION_8_PLASTICITY)) {
-  sec26_dir <- file.path(assets_dir, "Section_2.6_Variance_and_Heritability")
   sec26_plas_dir <- file.path(assets_dir, "Section_2.6_Phenotypic_Plasticity")
-  dir.create(sec26_dir, showWarnings = FALSE, recursive = TRUE)
+  sec26_dir      <- file.path(assets_dir, "Section_2.7_Variance_and_Heritability")
   dir.create(sec26_plas_dir, showWarnings = FALSE, recursive = TRUE)
+  dir.create(sec26_dir, showWarnings = FALSE, recursive = TRUE)
 
-# 8.1 Stratified Variance Partitioning & Heritability (three tiers; no naive pooling of Dharwad pseudo-replicates)
-traits_to_model <- c("T1_Count", "T2_Count", "T3_Count", "T4_Count", "PT_Count", "GrainYld", "TKW", "AUTPC", "AUTPC_norm", "TCE")
-sec2_note_dharwad <- "Unrandomized Duplicated Layout: Genotype Confounded with Field Position"
+  traits_to_model <- c("T1_Count", "T2_Count", "T3_Count", "T4_Count", "PT_Count", "GrainYld", "TKW", "AUTPC", "AUTPC_norm", "TCE")
+  sec2_note_dharwad <- "Unrandomized Duplicated Layout: Genotype Confounded with Field Position"
 
-# --- Tier 1: Within-trial variance components and heritability ---
-tier1_rows <- list()
-for (s_code in env_metadata$Sheet) {
-  sub_t <- master_raw %>% filter(Sheet == s_code) %>% droplevels()
-  loc_t <- unique(sub_t$Location)
-  n_rep_t <- length(unique(sub_t$Replication))
-  for (t in traits_to_model) {
-    if (loc_t == "Delhi") {
-      fit_w <- lmer(as.formula(paste0(t, " ~ Replication + (1 | Replication:Block_true) + (1 | Genotype)")),
-                    data = sub_t, REML = TRUE, control = lmerControl(optimizer = "bobyqa"))
-      vc_w <- as.data.frame(VarCorr(fit_w))
-      vg_w <- vc_w$vcov[vc_w$grp == "Genotype"]
-      vb_w <- vc_w$vcov[vc_w$grp == "Replication:Block_true"]
-      ve_w <- vc_w$vcov[vc_w$grp == "Residual"]
-      pev_w <- as.numeric(attr(ranef(fit_w, condVar = TRUE)$Genotype, "postVar"))
-      tier1_rows[[paste(s_code, t)]] <- data.frame(
-        Sheet = s_code, Environment = unique(sub_t$Environment), Trait = t,
-        Var_Genotype = vg_w, Var_RepBlock = vb_w, Var_Residual = ve_w,
-        H2_EntryMean = vg_w / (vg_w + ve_w / n_rep_t),
-        H2_Reliability_MeanPEV = 1 - mean(pev_w) / vg_w,
-        PseudoRep_Strip_Repeatability = NA_real_, Spatial_PosBlock_R2 = NA_real_,
-        Singular = isSingular(fit_w),
-        Methodological_Status = "Randomized incomplete-block trial (layout to be confirmed against field book)",
-        stringsAsFactors = FALSE)
-    } else {
-      fit_d <- lm(as.formula(paste0(t, " ~ Genotype + Replication")), data = sub_t)
-      an_d <- anova(fit_d)
-      ms_g <- an_d["Genotype", "Mean Sq"]; ms_e <- an_d["Residuals", "Mean Sq"]
-      vg_d <- (ms_g - ms_e) / n_rep_t
-      pos_d <- blues_df %>% filter(Sheet == s_code)
-      r2_pos <- summary(lm(pos_d[[t]] ~ factor(pos_d$Field_Pos_Block_Diagnostic)))$r.squared
-      tier1_rows[[paste(s_code, t)]] <- data.frame(
-        Sheet = s_code, Environment = unique(sub_t$Environment), Trait = t,
-        Var_Genotype = vg_d, Var_RepBlock = NA_real_, Var_Residual = ms_e,
-        H2_EntryMean = NA_real_, H2_Reliability_MeanPEV = NA_real_,
-        PseudoRep_Strip_Repeatability = vg_d / (vg_d + ms_e / n_rep_t),
-        Spatial_PosBlock_R2 = r2_pos, Singular = NA,
-        Methodological_Status = sec2_note_dharwad,
-        stringsAsFactors = FALSE)
+  tier1_rows <- list()
+  for (s_code in env_metadata$Sheet) {
+    sub_t <- master_raw %>% filter(Sheet == s_code) %>% droplevels()
+    loc_t <- unique(sub_t$Location)
+    n_rep_t <- length(unique(sub_t$Replication))
+    for (t in traits_to_model) {
+      if (loc_t == "Delhi") {
+        fit_w <- lmer(as.formula(paste0(t, " ~ Replication + (1 | Replication:Block_true) + (1 | Genotype)")),
+                      data = sub_t, REML = TRUE, control = lmerControl(optimizer = "bobyqa"))
+        vc_w <- as.data.frame(VarCorr(fit_w))
+        vg_w <- vc_w$vcov[vc_w$grp == "Genotype"]
+        vb_w <- vc_w$vcov[vc_w$grp == "Replication:Block_true"]
+        ve_w <- vc_w$vcov[vc_w$grp == "Residual"]
+        pev_w <- as.numeric(attr(ranef(fit_w, condVar = TRUE)$Genotype, "postVar"))
+        h2_rel_val <- ifelse(vg_w <= 1e-10, 0.0, pmax(0.0, 1.0 - mean(pev_w, na.rm = TRUE) / vg_w))
+        tier1_rows[[paste(s_code, t)]] <- data.frame(
+          Sheet = s_code, Environment = unique(sub_t$Environment), Trait = t,
+          Var_Genotype = sprintf("%.4f", vg_w), Var_RepBlock = sprintf("%.4f", vb_w), Var_Residual = sprintf("%.4f", ve_w),
+          H2_EntryMean = sprintf("%.4f", vg_w / (vg_w + ve_w / n_rep_t)),
+          H2_Reliability_MeanPEV = sprintf("%.4f", h2_rel_val),
+          PseudoRep_Strip_Repeatability = "\u2014", Spatial_PosBlock_R2 = "\u2014",
+          Singular = as.character(isSingular(fit_w)),
+          Methodological_Status = "Randomized incomplete-block trial (20 blocks x 10 plots/rep)",
+          stringsAsFactors = FALSE)
+      } else {
+        fit_d <- lm(as.formula(paste0(t, " ~ Genotype + Replication")), data = sub_t)
+        an_d <- anova(fit_d)
+        ms_g <- an_d["Genotype", "Mean Sq"]; ms_e <- an_d["Residuals", "Mean Sq"]
+        vg_d <- (ms_g - ms_e) / n_rep_t
+        pos_d <- blues_df %>% filter(Sheet == s_code)
+        r2_pos <- summary(lm(pos_d[[t]] ~ factor(pos_d$Field_Pos_Block_Diagnostic)))$r.squared
+        tier1_rows[[paste(s_code, t)]] <- data.frame(
+          Sheet = s_code, Environment = unique(sub_t$Environment), Trait = t,
+          Var_Genotype = sprintf("%.4f", vg_d), Var_RepBlock = "\u2014", Var_Residual = sprintf("%.4f", ms_e),
+          H2_EntryMean = "\u2014", H2_Reliability_MeanPEV = "\u2014",
+          PseudoRep_Strip_Repeatability = sprintf("%.4f", vg_d / (vg_d + ms_e / n_rep_t)),
+          Spatial_PosBlock_R2 = sprintf("%.4f", r2_pos), Singular = "\u2014",
+          Methodological_Status = sec2_note_dharwad,
+          stringsAsFactors = FALSE)
+      }
     }
   }
-}
-tier1_table <- bind_rows(tier1_rows)
-write.csv(tier1_table, file.path(sec26_dir, "Table_Within_Trial_Variance_and_Heritability.csv"), row.names = FALSE)
+  tier1_table <- bind_rows(tier1_rows)
+  write.csv(tier1_table, file.path(sec26_dir, "Table_Within_Trial_Variance_and_Heritability.csv"), row.names = FALSE)
 
-# --- Tier 2: Delhi-only randomized two-environment model ---
-del_raw <- master_raw %>% filter(Location == "Delhi") %>% droplevels()
-n_env_del <- nlevels(del_raw$Env_Factor)
-n_rep_del <- nlevels(del_raw$Replication)
-tier2_rows <- list()
-for (t in traits_to_model) {
-  fit_2 <- lmer(as.formula(paste0(t, " ~ Env_Factor + (1 | Env_Factor:Replication) + (1 | Env_Factor:Replication:Block_true) + (1 | Genotype) + (1 | Genotype:Env_Factor)")),
-                data = del_raw, REML = TRUE, control = lmerControl(optimizer = "bobyqa"))
-  vc2 <- as.data.frame(VarCorr(fit_2))
-  vg2  <- vc2$vcov[vc2$grp == "Genotype"]
-  vge2 <- vc2$vcov[vc2$grp == "Genotype:Env_Factor"]
-  ve2  <- vc2$vcov[vc2$grp == "Residual"]
-  tier2_rows[[t]] <- data.frame(
-    Trait = t, Vg_Delhi = vg2, Vge_Delhi = vge2, Ve_Delhi = ve2,
-    H2_Delhi_Randomized = vg2 / (vg2 + vge2 / n_env_del + ve2 / (n_env_del * n_rep_del)),
-    Singular_Delhi = isSingular(fit_2), stringsAsFactors = FALSE)
-}
-tier2_table <- bind_rows(tier2_rows)
+  del_raw <- master_raw %>% filter(Location == "Delhi") %>% droplevels()
+  n_env_del <- nlevels(del_raw$Env_Factor)
+  n_rep_del <- nlevels(del_raw$Replication)
+  tier2_rows <- list()
+  for (t in traits_to_model) {
+    fit_2 <- lmer(as.formula(paste0(t, " ~ Env_Factor + (1 | Env_Factor:Replication) + (1 | Env_Factor:Replication:Block_true) + (1 | Genotype) + (1 | Genotype:Env_Factor)")),
+                  data = del_raw, REML = TRUE, control = lmerControl(optimizer = "bobyqa"))
+    vc2 <- as.data.frame(VarCorr(fit_2))
+    vg2  <- vc2$vcov[vc2$grp == "Genotype"]
+    vge2 <- vc2$vcov[vc2$grp == "Genotype:Env_Factor"]
+    ve2  <- vc2$vcov[vc2$grp == "Residual"]
+    tier2_rows[[t]] <- data.frame(
+      Trait = t, Vg_Delhi = round(vg2, 5), Vge_Delhi = round(vge2, 5), Ve_Delhi = round(ve2, 5),
+      H2_Delhi_Randomized = round(vg2 / (vg2 + vge2 / n_env_del + ve2 / (n_env_del * n_rep_del)), 4),
+      Singular_Delhi = isSingular(fit_2), stringsAsFactors = FALSE)
+  }
+  tier2_table <- bind_rows(tier2_rows)
 
-# --- Tier 3: Four-environment Stage-2 entry-mean decomposition on BLUEs ---
-tier3_rows <- list()
-for (t in traits_to_model) {
-  fit_3 <- lmer(as.formula(paste0(t, " ~ Env_Factor + (1 | Genotype) + (1 | Genotype:Location)")),
-                data = blues_df, REML = TRUE, control = lmerControl(optimizer = "bobyqa"))
-  vc3 <- as.data.frame(VarCorr(fit_3))
-  vg3  <- vc3$vcov[vc3$grp == "Genotype"]
-  vgl3 <- vc3$vcov[vc3$grp == "Genotype:Location"]
-  ve3  <- vc3$vcov[vc3$grp == "Residual"]
-  n_loc <- length(unique(blues_df$Location)); n_sow <- nlevels(blues_df$Env_Factor) / n_loc
-  tier3_rows[[t]] <- data.frame(
-    Trait = t, Vg_4Env = vg3, V_GxLocation_SiteDesignConfounded = vgl3, V_GxSowing_plus_Error = ve3,
-    R2_Stage2_Repeatability = vg3 / (vg3 + vgl3 / n_loc + ve3 / (n_loc * n_sow)),
-    Singular_Stage2 = isSingular(fit_3), stringsAsFactors = FALSE)
-}
-tier3_table <- bind_rows(tier3_rows)
+  tier3_rows <- list()
+  for (t in traits_to_model) {
+    fit_3 <- lmer(as.formula(paste0(t, " ~ Env_Factor + (1 | Genotype) + (1 | Genotype:Location)")),
+                  data = blues_df, REML = TRUE, control = lmerControl(optimizer = "bobyqa"))
+    vc3 <- as.data.frame(VarCorr(fit_3))
+    vg3  <- vc3$vcov[vc3$grp == "Genotype"]
+    vgl3 <- vc3$vcov[vc3$grp == "Genotype:Location"]
+    ve3  <- vc3$vcov[vc3$grp == "Residual"]
+    n_loc <- length(unique(blues_df$Location)); n_sow <- nlevels(blues_df$Env_Factor) / n_loc
+    tier3_rows[[t]] <- data.frame(
+      Trait = t, Vg_4Env = round(vg3, 5), V_GxLocation_SiteDesignConfounded = round(vgl3, 5), V_GxSowing_plus_Error = round(ve3, 5),
+      R2_Stage2_Repeatability = round(vg3 / (vg3 + vgl3 / n_loc + ve3 / (n_loc * n_sow)), 4),
+      Singular_Stage2 = isSingular(fit_3), stringsAsFactors = FALSE)
+  }
+  tier3_table <- bind_rows(tier3_rows)
 
-# --- Naive pooled plot-level reference (diagnostic only; biased by Dharwad pseudo-replicates) ---
-naive_rows <- list()
-for (t in traits_to_model) {
-  naive_rows[[t]] <- tryCatch({
-    fit_n <- lmer(as.formula(paste0(t, " ~ (1|Environment) + (1|Replication:Environment) + (1|Genotype) + (1|Genotype:Environment)")),
-                  data = master_raw)
-    vcn <- as.data.frame(VarCorr(fit_n))
-    vgn <- vcn$vcov[vcn$grp == "Genotype"]; vgen <- vcn$vcov[vcn$grp == "Genotype:Environment"]; ven <- vcn$vcov[vcn$grp == "Residual"]
-    data.frame(Trait = t, H2_Naive_Pooled_Biased = vgn / (vgn + vgen / nlevels(master_raw$Env_Factor) + ven / (nlevels(master_raw$Env_Factor) * nlevels(master_raw$Replication))),
-               Naive_Warning = "Pools Dharwad pseudo-replicates with Delhi randomized plots under one residual variance; reference only",
-               stringsAsFactors = FALSE)
-  }, error = function(e) data.frame(Trait = t, H2_Naive_Pooled_Biased = NA_real_, Naive_Warning = conditionMessage(e), stringsAsFactors = FALSE))
-}
-h2_results <- tier2_table %>%
-  left_join(tier3_table, by = "Trait") %>%
-  left_join(bind_rows(naive_rows), by = "Trait")
-write.csv(h2_results, file.path(sec26_dir, "Global_BroadSense_Heritability.csv"), row.names = FALSE)
+  h2_results <- tier2_table %>% left_join(tier3_table, by = "Trait")
+  write.csv(h2_results, file.path(sec26_dir, "Global_BroadSense_Heritability.csv"), row.names = FALSE)
 
-# --- Stage-2 entry-mean ANOVA (error = Genotype x Sowing within Location) and Delhi-only plot-level ANOVA ---
-blues_df$Location <- factor(blues_df$Location)
-fit_anova <- lm(GrainYld ~ Genotype + Env_Factor + Genotype:Location, data = blues_df)
-anova_table <- as.data.frame(anova(fit_anova))
-anova_table$Percent_Variance <- (anova_table$`Sum Sq` / sum(anova_table$`Sum Sq`)) * 100
-anova_table$Model_Scope <- "Stage-2 entry means; Residual = Genotype x Sowing(Location); Genotype x Location is site/design confounded"
-write.csv(anova_table, file.path(sec26_dir, "Global_Full_ANOVA_Table.csv"), row.names = TRUE)
-
-fit_anova_del <- lm(GrainYld ~ Genotype * Env_Factor + Env_Factor:Replication + Env_Factor:Replication:Block_true, data = del_raw)
-anova_del <- as.data.frame(anova(fit_anova_del))
-anova_del$Percent_Variance <- (anova_del$`Sum Sq` / sum(anova_del$`Sum Sq`)) * 100
-write.csv(anova_del, file.path(sec26_dir, "Global_Full_ANOVA_Table_Delhi_Plot_Level.csv"), row.names = TRUE)
-
-# 8.2 Finlay-Wilkinson Plasticity Regression Modeling & Empirical Quadrants
-# Units are defined once in the global setup (YIELD_UNIT_LABEL, CONVERSION_PLOT_TO_M2)
-
-# Regressing Genotype Yield onto Environmental Mean Yield
-env_means <- blues_df %>%
-  group_by(Environment) %>%
-  summarise(Env_Index = mean(GrainYld, na.rm = TRUE), .groups = "drop")
-
-fw_df <- blues_df %>%
-  left_join(env_means, by = "Environment") %>%
-  mutate(Env_Index_c = Env_Index - mean(Env_Index))
-
-# Slope Heterogeneity Tests (Point 2)
-# 1. Classical ANOVA F-test for interaction
-m_main <- lm(GrainYld ~ Genotype + Env_Index, data = fw_df)
-m_int  <- lm(GrainYld ~ Genotype * Env_Index, data = fw_df)
-f_comp <- anova(m_main, m_int)
-f_stat <- f_comp$F[2]
-df_num <- f_comp$Df[2]
-df_den <- f_comp$Res.Df[2]
-p_val_f <- f_comp$`Pr(>F)`[2]
-
-# 2. Mixed-model Likelihood Ratio Test for random slope variance (Point 2)
-m_lmm_0 <- lmer(GrainYld ~ Env_Index_c + (1 | Genotype), data = fw_df, REML = FALSE)
-m_lmm_1 <- lmer(GrainYld ~ Env_Index_c + (1 + Env_Index_c | Genotype), data = fw_df, REML = FALSE,
-                control = lmerControl(optimizer = "bobyqa"))
-lrt_stat <- as.numeric(2 * (logLik(m_lmm_1) - logLik(m_lmm_0)))
-p_val_mixture <- 0.5 * pchisq(lrt_stat, df = 1, lower.tail = FALSE) + 0.5 * pchisq(lrt_stat, df = 2, lower.tail = FALSE)
-
-# Centred Mixed Model for BLUP Slopes & Reliability (Point 3)
-fit_lmm_c <- lmer(GrainYld ~ Env_Index_c + (1 + Env_Index_c | Genotype), data = fw_df,
-                  control = lmerControl(optimizer = "bobyqa"))
-vc_c <- as.data.frame(VarCorr(fit_lmm_c))
-idx_b  <- which(vc_c$grp == "Genotype" & vc_c$var1 == "Env_Index_c" & is.na(vc_c$var2))
-idx_a  <- which(vc_c$grp == "Genotype" & vc_c$var1 == "(Intercept)" & is.na(vc_c$var2))
-idx_ab <- which(vc_c$grp == "Genotype" & vc_c$var1 == "(Intercept)" & vc_c$var2 == "Env_Index_c")
-
-sigma2_b <- if (length(idx_b) > 0) vc_c$vcov[idx_b] else NA_real_
-sigma_b  <- if (length(idx_b) > 0) vc_c$sdcor[idx_b] else NA_real_
-sigma2_a <- if (length(idx_a) > 0) vc_c$vcov[idx_a] else NA_real_
-sigma_a  <- if (length(idx_a) > 0) vc_c$sdcor[idx_a] else NA_real_
-corr_ab  <- if (length(idx_ab) > 0) vc_c$sdcor[idx_ab] else NA_real_
-
-ran <- ranef(fit_lmm_c)$Genotype
-ran$Genotype <- rownames(ran)
-ran$BLUP_Slope <- fixef(fit_lmm_c)["Env_Index_c"] + ran$Env_Index_c
-
-# Leave-One-Genotype-Out (LOGO) Environmental Index
-env_totals <- blues_df %>%
-  group_by(Environment) %>%
-  summarise(
-    Sum_Yield = sum(GrainYld, na.rm = TRUE),
-    N_Gen = sum(!is.na(GrainYld)),
-    .groups = "drop"
-  )
-
-blues_logo <- blues_df %>%
-  left_join(env_totals, by = "Environment") %>%
-  mutate(
-    Env_Index_LOGO = (Sum_Yield - GrainYld) / (N_Gen - 1)
-  )
-
-logo_models <- blues_logo %>%
-  group_by(Genotype) %>%
-  do({
-    mod <- lm(GrainYld ~ Env_Index_LOGO, data = .)
-    data.frame(Slope_LOGO = coef(mod)["Env_Index_LOGO"])
-  }) %>%
-  ungroup()
-
-# Separate Genotype Regressions with Exact t-Distribution 95% CIs (Points 1, 5)
-fw_models <- fw_df %>%
-  group_by(Genotype) %>%
-  do({
-    mod <- lm(GrainYld ~ Env_Index, data = .)
-    res_df <- mod$df.residual # df = 2 for N = 4 environments
-    t_crit <- qt(0.975, df = res_df)
-    b <- coef(mod)["Env_Index"]
-    se_b <- summary(mod)$coefficients["Env_Index", "Std. Error"]
-    ci_lower <- b - t_crit * se_b
-    ci_upper <- b + t_crit * se_b
-    t_b1 <- (b - 1.0) / se_b
-    p_b1 <- 2 * (1 - pt(abs(t_b1), df = res_df))
-    
+  format_clean_anova <- function(fit_obj, scope_note, type = c("I", "II")) {
+    type <- match.arg(type)
+    an_df <- if (type == "II") {
+      as.data.frame(car::Anova(fit_obj, type = "II"))
+    } else {
+      as.data.frame(anova(fit_obj))
+    }
+    if (!"Mean Sq" %in% names(an_df)) {
+      an_df$`Mean Sq` <- an_df$`Sum Sq` / an_df$Df
+    }
+    an_df$Source_of_Variation <- rownames(an_df)
+    rownames(an_df) <- NULL
+    pct_v <- (an_df$`Sum Sq` / sum(an_df$`Sum Sq`)) * 100
     data.frame(
-      Mean_Yield = mean(.$GrainYld, na.rm = TRUE),
-      FW_Slope = b,
-      FW_Slope_SE = se_b,
-      FW_Slope_CI_Lower = ci_lower,
-      FW_Slope_CI_Upper = ci_upper,
-      CI_excludes_1 = (ci_lower > 1.0) | (ci_upper < 1.0),
-      p_val_b1 = p_b1,
-      FW_R2 = summary(mod)$r.squared
+      Source_of_Variation = an_df$Source_of_Variation,
+      Df = an_df$Df,
+      Sum_Sq = round(an_df$`Sum Sq`, 4),
+      Mean_Sq = round(an_df$`Mean Sq`, 4),
+      F_Value = ifelse(is.na(an_df$`F value`), "\u2014", sprintf("%.2f", an_df$`F value`)),
+      P_Value = ifelse(is.na(an_df$`Pr(>F)`), "\u2014", ifelse(an_df$`Pr(>F)` < 0.0001, "< 0.0001", sprintf("%.4f", an_df$`Pr(>F)`))),
+      Percent_Variance = round(pct_v, 2),
+      Model_Scope = scope_note,
+      stringsAsFactors = FALSE
     )
-  }) %>%
-  ungroup()
+  }
 
-# Multiple testing adjustment (Point 5)
-fw_models$p_val_b1_holm <- p.adjust(fw_models$p_val_b1, method = "holm")
-fw_models <- fw_models %>%
-  left_join(ran %>% select(Genotype, BLUP_Slope), by = "Genotype") %>%
-  left_join(logo_models, by = "Genotype")
+  blues_df$Location <- factor(blues_df$Location)
+  fit_anova <- lm(GrainYld ~ Genotype + Env_Factor + Genotype:Location, data = blues_df)
+  anova_table <- format_clean_anova(fit_anova, "Stage-2 entry means; Residual = Genotype x Sowing(Location); Genotype x Location is site/design confounded")
+  write.csv(anova_table, file.path(sec26_dir, "Global_Full_ANOVA_Table.csv"), row.names = FALSE)
 
-var_ols_slopes <- var(fw_models$FW_Slope)
-slope_reliability <- sigma2_b / var_ols_slopes
-
-# Population Grand Mean Yield
-grand_mean_yield <- mean(fw_models$Mean_Yield, na.rm = TRUE)
-
-# Quadrant Assignments: Primary (OLS) and Secondary (BLUP) (Points 1, 4, 6)
-# Described strictly by coordinate axes
-fw_models <- fw_models %>%
-  mutate(
-    Quadrant = case_when(
-      Mean_Yield >= grand_mean_yield & FW_Slope >= 1.0 ~ "High yield, high responsiveness",
-      Mean_Yield >= grand_mean_yield & FW_Slope <  1.0 ~ "High yield, low responsiveness",
-      Mean_Yield <  grand_mean_yield & FW_Slope <  1.0 ~ "Low yield, low responsiveness",
-      Mean_Yield <  grand_mean_yield & FW_Slope >= 1.0 ~ "Low yield, high responsiveness"
-    ),
-    Quadrant = factor(Quadrant, levels = c(
-      "High yield, high responsiveness",
-      "High yield, low responsiveness",
-      "Low yield, low responsiveness",
-      "Low yield, high responsiveness"
-    )),
-    Quadrant_BLUP = case_when(
-      Mean_Yield >= grand_mean_yield & BLUP_Slope >= 1.0 ~ "High yield, high responsiveness",
-      Mean_Yield >= grand_mean_yield & BLUP_Slope <  1.0 ~ "High yield, low responsiveness",
-      Mean_Yield <  grand_mean_yield & BLUP_Slope <  1.0 ~ "Low yield, low responsiveness",
-      Mean_Yield <  grand_mean_yield & BLUP_Slope >= 1.0 ~ "Low yield, high responsiveness"
-    ),
-    Quadrant_BLUP = factor(Quadrant_BLUP, levels = c(
-      "High yield, high responsiveness",
-      "High yield, low responsiveness",
-      "Low yield, low responsiveness",
-      "Low yield, high responsiveness"
-    ))
+  # Order blocking terms (Env_Factor, Replication, Block_true) BEFORE Genotype using keep.order = TRUE
+  # so sequential Type-I SS adjusts Genotype and Genotype:Env_Factor for 3rd-order incomplete blocks
+  f_del_keep <- terms(
+    GrainYld ~ Env_Factor + Env_Factor:Replication + Env_Factor:Replication:Block_true + Genotype + Env_Factor:Genotype,
+    keep.order = TRUE
   )
+  fit_anova_del <- lm(f_del_keep, data = del_raw)
+  anova_del <- format_clean_anova(fit_anova_del, "Delhi randomized incomplete-block trials (NWPZ Baseline & NWPZ Warm); plot-level ANOVA (Block-Adjusted)")
+  write.csv(anova_del, file.path(sec26_dir, "Global_Full_ANOVA_Table_Delhi_Plot_Level.csv"), row.names = FALSE)
 
-# Export Full Classification Table (Points 1, 5)
-write.csv(fw_models, file.path(sec26_plas_dir, "Finlay_Wilkinson_Classes.csv"), row.names = FALSE)
+  # Export Clearly Labeled Main Text and Supplementary Excel Workbooks in Section 2.6 Variance & Heritability
+  if (requireNamespace("openxlsx", quietly = TRUE)) {
+    wb_t7 <- openxlsx::createWorkbook()
+    openxlsx::addWorksheet(wb_t7, "Table_7A_Tier2_Tier3_Global_H2")
+    openxlsx::writeDataTable(wb_t7, "Table_7A_Tier2_Tier3_Global_H2", h2_results, withFilter = TRUE)
+    openxlsx::freezePane(wb_t7, "Table_7A_Tier2_Tier3_Global_H2", firstRow = TRUE)
+    openxlsx::setColWidths(wb_t7, "Table_7A_Tier2_Tier3_Global_H2", cols = seq_len(ncol(h2_results)), widths = "auto")
 
-# Quadrant Stability: Leave-One-Environment-Out (LOEO) for OLS and BLUP (Points 1, 4)
-envs_loeo <- master_pheno_spec$Env_Name
-loeo_summary <- data.frame()
+    openxlsx::addWorksheet(wb_t7, "Table_7B_Tier1_Within_Trial_H2")
+    openxlsx::writeDataTable(wb_t7, "Table_7B_Tier1_Within_Trial_H2", tier1_table, withFilter = TRUE)
+    openxlsx::freezePane(wb_t7, "Table_7B_Tier1_Within_Trial_H2", firstRow = TRUE)
+    openxlsx::setColWidths(wb_t7, "Table_7B_Tier1_Within_Trial_H2", cols = seq_len(ncol(tier1_table)), widths = "auto")
+    openxlsx::saveWorkbook(wb_t7, file.path(sec26_dir, "Table_7_MAIN_TEXT_Stratified_Variance_and_Heritability.xlsx"), overwrite = TRUE)
 
-for (k in seq_along(envs_loeo)) {
-  left_out <- envs_loeo[k]
-  sub_df <- blues_df %>% filter(Environment != left_out)
-  sub_env_means <- sub_df %>%
-    group_by(Environment) %>%
-    summarise(Env_Index_sub = mean(GrainYld, na.rm = TRUE), .groups = "drop")
-  sub_df <- sub_df %>%
-    left_join(sub_env_means, by = "Environment") %>%
-    mutate(Env_Index_sub_c = Env_Index_sub - mean(Env_Index_sub))
-  
-  # OLS fit
-  sub_fw <- sub_df %>%
+    wb_s15 <- openxlsx::createWorkbook()
+    openxlsx::addWorksheet(wb_s15, "Table_S15A_Stage2_BLUE_ANOVA")
+    openxlsx::writeDataTable(wb_s15, "Table_S15A_Stage2_BLUE_ANOVA", anova_table, withFilter = TRUE)
+    openxlsx::freezePane(wb_s15, "Table_S15A_Stage2_BLUE_ANOVA", firstRow = TRUE)
+    openxlsx::setColWidths(wb_s15, "Table_S15A_Stage2_BLUE_ANOVA", cols = seq_len(ncol(anova_table)), widths = "auto")
+
+    openxlsx::addWorksheet(wb_s15, "Table_S15B_Delhi_Plot_ANOVA")
+    openxlsx::writeDataTable(wb_s15, "Table_S15B_Delhi_Plot_ANOVA", anova_del, withFilter = TRUE)
+    openxlsx::freezePane(wb_s15, "Table_S15B_Delhi_Plot_ANOVA", firstRow = TRUE)
+    openxlsx::setColWidths(wb_s15, "Table_S15B_Delhi_Plot_ANOVA", cols = seq_len(ncol(anova_del)), widths = "auto")
+    openxlsx::saveWorkbook(wb_s15, file.path(sec26_dir, "Table_S15_SUPPLEMENTARY_Stage2_and_Delhi_Plot_ANOVA.xlsx"), overwrite = TRUE)
+  }
+
+  # 8.2 Finlay-Wilkinson Plasticity Regression Modeling & Empirical Quadrants
+  env_means <- blues_df %>% group_by(Environment) %>% summarise(Env_Index = mean(GrainYld, na.rm = TRUE), .groups = "drop")
+  fw_df <- blues_df %>% left_join(env_means, by = "Environment") %>% mutate(Env_Index_c = Env_Index - mean(Env_Index))
+
+  m_main <- lm(GrainYld ~ Genotype + Env_Index, data = fw_df)
+  m_int  <- lm(GrainYld ~ Genotype * Env_Index, data = fw_df)
+  f_comp <- anova(m_main, m_int)
+  f_stat <- f_comp$F[2]; df_num <- f_comp$Df[2]; df_den <- f_comp$Res.Df[2]; p_val_f <- f_comp$`Pr(>F)`[2]
+
+  m_lmm_0 <- lmer(GrainYld ~ Env_Index_c + (1 | Genotype), data = fw_df, REML = FALSE)
+  m_lmm_1 <- lmer(GrainYld ~ Env_Index_c + (1 + Env_Index_c | Genotype), data = fw_df, REML = FALSE, control = lmerControl(optimizer = "bobyqa"))
+  lrt_stat <- as.numeric(2 * (logLik(m_lmm_1) - logLik(m_lmm_0)))
+  p_val_mixture <- 0.5 * pchisq(lrt_stat, df = 1, lower.tail = FALSE) + 0.5 * pchisq(lrt_stat, df = 2, lower.tail = FALSE)
+
+  fit_lmm_c <- lmer(GrainYld ~ Env_Index_c + (1 + Env_Index_c | Genotype), data = fw_df, control = lmerControl(optimizer = "bobyqa"))
+  vc_c <- as.data.frame(VarCorr(fit_lmm_c))
+  idx_b  <- which(vc_c$grp == "Genotype" & vc_c$var1 == "Env_Index_c" & is.na(vc_c$var2))
+  idx_a  <- which(vc_c$grp == "Genotype" & vc_c$var1 == "(Intercept)" & is.na(vc_c$var2))
+  idx_ab <- which(vc_c$grp == "Genotype" & vc_c$var1 == "(Intercept)" & vc_c$var2 == "Env_Index_c")
+
+  sigma2_b <- if (length(idx_b) > 0) vc_c$vcov[idx_b] else NA_real_
+  sigma2_a <- if (length(idx_a) > 0) vc_c$vcov[idx_a] else NA_real_
+  corr_ab  <- if (length(idx_ab) > 0) vc_c$sdcor[idx_ab] else NA_real_
+
+  ran <- ranef(fit_lmm_c)$Genotype
+  ran$Genotype <- rownames(ran)
+  ran$BLUP_Slope <- fixef(fit_lmm_c)["Env_Index_c"] + ran$Env_Index_c
+
+  env_totals <- blues_df %>% group_by(Environment) %>% summarise(Sum_Yield = sum(GrainYld, na.rm = TRUE), N_Gen = sum(!is.na(GrainYld)), .groups = "drop")
+  blues_logo <- blues_df %>% left_join(env_totals, by = "Environment") %>% mutate(Env_Index_LOGO = (Sum_Yield - GrainYld) / (N_Gen - 1))
+  logo_models <- blues_logo %>% group_by(Genotype) %>% do({ mod <- lm(GrainYld ~ Env_Index_LOGO, data = .); data.frame(Slope_LOGO = coef(mod)["Env_Index_LOGO"]) }) %>% ungroup()
+
+  fw_models <- fw_df %>%
     group_by(Genotype) %>%
     do({
-      mod <- lm(GrainYld ~ Env_Index_sub, data = .)
-      data.frame(
-        Mean_Yield_sub = mean(.$GrainYld, na.rm = TRUE),
-        Slope_OLS_sub = coef(mod)["Env_Index_sub"]
-      )
-    }) %>%
-    ungroup()
-  
-  # Centred BLUP fit
-  sub_lmm <- lmer(GrainYld ~ Env_Index_sub_c + (1 + Env_Index_sub_c | Genotype), data = sub_df,
-                  control = lmerControl(optimizer = "bobyqa"))
-  sub_ran <- ranef(sub_lmm)$Genotype
-  sub_ran$Genotype <- rownames(sub_ran)
-  sub_ran$Slope_BLUP_sub <- fixef(sub_lmm)["Env_Index_sub_c"] + sub_ran$Env_Index_sub_c
-  
-  sub_fw <- sub_fw %>% left_join(sub_ran %>% select(Genotype, Slope_BLUP_sub), by = "Genotype")
-  sub_grand_mean <- mean(sub_fw$Mean_Yield_sub, na.rm = TRUE)
-  
-  sub_fw <- sub_fw %>%
+      mod <- lm(GrainYld ~ Env_Index, data = .)
+      res_df <- mod$df.residual
+      t_crit <- qt(0.975, df = res_df)
+      b <- coef(mod)["Env_Index"]
+      se_b <- summary(mod)$coefficients["Env_Index", "Std. Error"]
+      ci_lower <- b - t_crit * se_b; ci_upper <- b + t_crit * se_b
+      t_b1 <- (b - 1.0) / se_b; p_b1 <- 2 * (1 - pt(abs(t_b1), df = res_df))
+      data.frame(Mean_Yield = mean(.$GrainYld, na.rm = TRUE), FW_Slope = b, FW_Slope_SE = se_b,
+                 FW_Slope_CI_Lower = ci_lower, FW_Slope_CI_Upper = ci_upper,
+                 CI_excludes_1 = (ci_lower > 1.0) | (ci_upper < 1.0), p_val_b1 = p_b1, FW_R2 = summary(mod)$r.squared)
+    }) %>% ungroup()
+
+  fw_models$p_val_b1_holm <- p.adjust(fw_models$p_val_b1, method = "holm")
+  fw_models <- fw_models %>% left_join(ran %>% select(Genotype, BLUP_Slope), by = "Genotype") %>% left_join(logo_models, by = "Genotype")
+  var_ols_slopes <- var(fw_models$FW_Slope)
+  slope_reliability <- sigma2_b / var_ols_slopes
+  grand_mean_yield <- mean(fw_models$Mean_Yield, na.rm = TRUE)
+
+  fw_models <- fw_models %>%
     mutate(
-      Quadrant_OLS_sub = case_when(
-        Mean_Yield_sub >= sub_grand_mean & Slope_OLS_sub >= 1.0 ~ "High yield, high responsiveness",
-        Mean_Yield_sub >= sub_grand_mean & Slope_OLS_sub <  1.0 ~ "High yield, low responsiveness",
-        Mean_Yield_sub <  sub_grand_mean & Slope_OLS_sub <  1.0 ~ "Low yield, low responsiveness",
-        Mean_Yield_sub <  sub_grand_mean & Slope_OLS_sub >= 1.0 ~ "Low yield, high responsiveness"
-      ),
-      Quadrant_BLUP_sub = case_when(
-        Mean_Yield_sub >= sub_grand_mean & Slope_BLUP_sub >= 1.0 ~ "High yield, high responsiveness",
-        Mean_Yield_sub >= sub_grand_mean & Slope_BLUP_sub <  1.0 ~ "High yield, low responsiveness",
-        Mean_Yield_sub <  sub_grand_mean & Slope_BLUP_sub <  1.0 ~ "Low yield, low responsiveness",
-        Mean_Yield_sub <  sub_grand_mean & Slope_BLUP_sub >= 1.0 ~ "Low yield, high responsiveness"
-      )
+      Quadrant = factor(case_when(
+        Mean_Yield >= grand_mean_yield & FW_Slope >= 1.0 ~ "High yield, high responsiveness",
+        Mean_Yield >= grand_mean_yield & FW_Slope <  1.0 ~ "High yield, low responsiveness",
+        Mean_Yield <  grand_mean_yield & FW_Slope <  1.0 ~ "Low yield, low responsiveness",
+        Mean_Yield <  grand_mean_yield & FW_Slope >= 1.0 ~ "Low yield, high responsiveness"
+      ), levels = c("High yield, high responsiveness", "High yield, low responsiveness", "Low yield, low responsiveness", "Low yield, high responsiveness")),
+      Quadrant_BLUP = factor(case_when(
+        Mean_Yield >= grand_mean_yield & BLUP_Slope >= 1.0 ~ "High yield, high responsiveness",
+        Mean_Yield >= grand_mean_yield & BLUP_Slope <  1.0 ~ "High yield, low responsiveness",
+        Mean_Yield <  grand_mean_yield & BLUP_Slope <  1.0 ~ "Low yield, low responsiveness",
+        Mean_Yield <  grand_mean_yield & BLUP_Slope >= 1.0 ~ "Low yield, high responsiveness"
+      ), levels = c("High yield, high responsiveness", "High yield, low responsiveness", "Low yield, low responsiveness", "Low yield, high responsiveness"))
     )
-  
-  comp <- fw_models %>%
-    select(Genotype, Quadrant, Quadrant_BLUP) %>%
-    left_join(sub_fw %>% select(Genotype, Quadrant_OLS_sub, Quadrant_BLUP_sub), by = "Genotype") %>%
-    mutate(
-      Changed_OLS  = as.character(Quadrant) != Quadrant_OLS_sub,
-      Changed_BLUP = as.character(Quadrant_BLUP) != Quadrant_BLUP_sub
+  write.csv(fw_models, file.path(sec26_plas_dir, "Finlay_Wilkinson_Classes.csv"), row.names = FALSE)
+
+  envs_loeo <- master_pheno_spec$Env_Name
+  loeo_summary <- data.frame()
+  for (k in seq_along(envs_loeo)) {
+    left_out <- envs_loeo[k]
+    sub_df <- blues_df %>% filter(Environment != left_out)
+    sub_env_means <- sub_df %>% group_by(Environment) %>% summarise(Env_Index_sub = mean(GrainYld, na.rm = TRUE), .groups = "drop")
+    sub_df <- sub_df %>% left_join(sub_env_means, by = "Environment") %>% mutate(Env_Index_sub_c = Env_Index_sub - mean(Env_Index_sub))
+    sub_fw <- sub_df %>% group_by(Genotype) %>% do({ mod <- lm(GrainYld ~ Env_Index_sub, data = .); data.frame(Mean_Yield_sub = mean(.$GrainYld, na.rm = TRUE), Slope_OLS_sub = coef(mod)["Env_Index_sub"]) }) %>% ungroup()
+    sub_lmm <- lmer(GrainYld ~ Env_Index_sub_c + (1 + Env_Index_sub_c | Genotype), data = sub_df, control = lmerControl(optimizer = "bobyqa"))
+    sub_ran <- ranef(sub_lmm)$Genotype; sub_ran$Genotype <- rownames(sub_ran); sub_ran$Slope_BLUP_sub <- fixef(sub_lmm)["Env_Index_sub_c"] + sub_ran$Env_Index_sub_c
+    sub_fw <- sub_fw %>% left_join(sub_ran %>% select(Genotype, Slope_BLUP_sub), by = "Genotype")
+    sub_grand_mean <- mean(sub_fw$Mean_Yield_sub, na.rm = TRUE)
+    sub_fw <- sub_fw %>% mutate(
+      Quadrant_OLS_sub = case_when(Mean_Yield_sub >= sub_grand_mean & Slope_OLS_sub >= 1.0 ~ "High yield, high responsiveness", Mean_Yield_sub >= sub_grand_mean & Slope_OLS_sub < 1.0 ~ "High yield, low responsiveness", Mean_Yield_sub < sub_grand_mean & Slope_OLS_sub < 1.0 ~ "Low yield, low responsiveness", TRUE ~ "Low yield, high responsiveness"),
+      Quadrant_BLUP_sub = case_when(Mean_Yield_sub >= sub_grand_mean & Slope_BLUP_sub >= 1.0 ~ "High yield, high responsiveness", Mean_Yield_sub >= sub_grand_mean & Slope_BLUP_sub < 1.0 ~ "High yield, low responsiveness", Mean_Yield_sub < sub_grand_mean & Slope_BLUP_sub < 1.0 ~ "Low yield, low responsiveness", TRUE ~ "Low yield, high responsiveness")
     )
-  
-  loeo_summary <- rbind(loeo_summary, data.frame(
-    Left_Out_Environment = left_out,
-    OLS_Changed_N = sum(comp$Changed_OLS),
-    OLS_Changed_Pct = mean(comp$Changed_OLS) * 100,
-    BLUP_Changed_N = sum(comp$Changed_BLUP),
-    BLUP_Changed_Pct = mean(comp$Changed_BLUP) * 100
-  ))
-}
+    comp <- fw_models %>% select(Genotype, Quadrant, Quadrant_BLUP) %>% left_join(sub_fw %>% select(Genotype, Quadrant_OLS_sub, Quadrant_BLUP_sub), by = "Genotype") %>% mutate(Changed_OLS = as.character(Quadrant) != Quadrant_OLS_sub, Changed_BLUP = as.character(Quadrant_BLUP) != Quadrant_BLUP_sub)
+    loeo_summary <- rbind(loeo_summary, data.frame(Left_Out_Environment = left_out, OLS_Changed_N = sum(comp$Changed_OLS), OLS_Changed_Pct = mean(comp$Changed_OLS) * 100, BLUP_Changed_N = sum(comp$Changed_BLUP), BLUP_Changed_Pct = mean(comp$Changed_BLUP) * 100))
+  }
 
-# Heuristic SE Perturbation using rt(df = 2) (Point 6)
-set.seed(42)
-n_pert_reps <- 2000
-pert_changes_ols <- numeric(nrow(fw_models))
-for (p in 1:n_pert_reps) {
-  b_pert <- fw_models$FW_Slope + rt(nrow(fw_models), df = 2) * fw_models$FW_Slope_SE
-  q_pert <- case_when(
-    fw_models$Mean_Yield >= grand_mean_yield & b_pert >= 1.0 ~ "High yield, high responsiveness",
-    fw_models$Mean_Yield >= grand_mean_yield & b_pert <  1.0 ~ "High yield, low responsiveness",
-    fw_models$Mean_Yield <  grand_mean_yield & b_pert <  1.0 ~ "Low yield, low responsiveness",
-    fw_models$Mean_Yield <  grand_mean_yield & b_pert >= 1.0 ~ "Low yield, high responsiveness"
-  )
-  pert_changes_ols <- pert_changes_ols + (q_pert != as.character(fw_models$Quadrant))
-}
-heuristic_pert_pct <- mean(pert_changes_ols / n_pert_reps) * 100
+  set.seed(42); n_pert_reps <- 2000; pert_changes_ols <- numeric(nrow(fw_models))
+  for (p in 1:n_pert_reps) {
+    b_pert <- fw_models$FW_Slope + rt(nrow(fw_models), df = 2) * fw_models$FW_Slope_SE
+    q_pert <- case_when(fw_models$Mean_Yield >= grand_mean_yield & b_pert >= 1.0 ~ "High yield, high responsiveness", fw_models$Mean_Yield >= grand_mean_yield & b_pert < 1.0 ~ "High yield, low responsiveness", fw_models$Mean_Yield < grand_mean_yield & b_pert < 1.0 ~ "Low yield, low responsiveness", TRUE ~ "Low yield, high responsiveness")
+    pert_changes_ols <- pert_changes_ols + (q_pert != as.character(fw_models$Quadrant))
+  }
+  heuristic_pert_pct <- mean(pert_changes_ols / n_pert_reps) * 100
 
-# Quadrant Summary Table (Points 1, 8, 10)
-quad_summary <- fw_models %>%
-  group_by(Quadrant) %>%
-  summarise(
-    n = n(),
-    Pct = (n() / nrow(fw_models)) * 100,
-    Mean_Yield_Avg = mean(Mean_Yield),
-    Mean_Yield_SD  = sd(Mean_Yield),
-    Mean_Slope_Avg = mean(FW_Slope),
-    Mean_Slope_SD  = sd(FW_Slope),
-    Mean_Slope_SE  = mean(FW_Slope_SE),
-    Median_Slope_SE = median(FW_Slope_SE),
-    n_CI_excludes_1 = sum(CI_excludes_1),
-    .groups = "drop"
-  )
-write.csv(quad_summary, file.path(sec26_plas_dir, "Table_Finlay_Wilkinson_Quadrant_Summary.csv"), row.names = FALSE)
+  quad_summary <- fw_models %>% group_by(Quadrant) %>% summarise(n = n(), Pct = (n() / nrow(fw_models)) * 100, Mean_Yield_Avg = mean(Mean_Yield), Mean_Yield_SD = sd(Mean_Yield), Mean_Slope_Avg = mean(FW_Slope), Mean_Slope_SD = sd(FW_Slope), Mean_Slope_SE = mean(FW_Slope_SE), Median_Slope_SE = median(FW_Slope_SE), n_CI_excludes_1 = sum(CI_excludes_1), .groups = "drop")
+  write.csv(quad_summary, file.path(sec26_plas_dir, "Table_Finlay_Wilkinson_Quadrant_Summary.csv"), row.names = FALSE)
+  write.csv(loeo_summary, file.path(sec26_plas_dir, "Table_Finlay_Wilkinson_Stability_Diagnostics.csv"), row.names = FALSE)
 
-# Stability Diagnostics & Snapshot Table (Points 2, 3, 4, 6, 8)
-diagnostics_table <- data.frame(
-  Metric = c(
-    "Grand_Mean_Yield", "Harvested_Area_m2", "Conversion_Factor_Plot_to_m2",
-    "Slope_Heterogeneity_F_stat", "Slope_Heterogeneity_F_df_num", "Slope_Heterogeneity_F_df_den", "Slope_Heterogeneity_F_p_val",
-    "LMM_Random_Slope_LRT_stat", "LMM_Random_Slope_Mixture_p_val",
-    "Centred_LMM_Slope_Variance_sigma2_b", "Centred_LMM_Intercept_Variance_sigma2_a", "Centred_LMM_Corr_Intercept_Slope",
-    "OLS_Slope_Variance", "Slope_Reliability_Ratio",
-    "Genotypes_Unadjusted_CI_Excludes_1_N", "Genotypes_Unadjusted_CI_Excludes_1_Pct",
-    "Genotypes_Expected_By_Chance_under_H0", "Genotypes_Holm_Adjusted_Significant_N",
-    "LOEO_Mean_Instability_OLS_Pct", "LOEO_Mean_Instability_BLUP_Pct",
-    "Heuristic_Perturbation_Quadrant_Change_Pct"
-  ),
-  Value = c(
-    grand_mean_yield, PLOT_HARVESTED_AREA_M2, CONVERSION_PLOT_TO_M2,
-    f_stat, df_num, df_den, p_val_f,
-    lrt_stat, p_val_mixture,
-    sigma2_b, sigma2_a, corr_ab,
-    var_ols_slopes, slope_reliability,
-    sum(fw_models$CI_excludes_1), (sum(fw_models$CI_excludes_1) / nrow(fw_models)) * 100,
-    0.05 * nrow(fw_models), sum(fw_models$p_val_b1_holm < 0.05),
-    mean(loeo_summary$OLS_Changed_Pct), mean(loeo_summary$BLUP_Changed_Pct),
-    heuristic_pert_pct
-  ),
-  stringsAsFactors = FALSE
-)
-write.csv(diagnostics_table, file.path(sec26_plas_dir, "Finlay_Wilkinson_Diagnostics_Snapshot.csv"), row.names = FALSE)
-write.csv(loeo_summary, file.path(sec26_plas_dir, "Table_Finlay_Wilkinson_Stability_Diagnostics.csv"), row.names = FALSE)
+  quad_palette <- c("High yield, high responsiveness" = "#2b8cbe", "High yield, low responsiveness" = "#2ca25f", "Low yield, low responsiveness" = "#7f7f7f", "Low yield, high responsiveness" = "#de2d26")
+  n_unadj <- sum(fw_models$CI_excludes_1); n_total <- nrow(fw_models); pct_unadj <- (n_unadj / n_total) * 100; exp_chance <- 0.05 * n_total; n_holm <- sum(fw_models$p_val_b1_holm < 0.05); med_se <- median(fw_models$FW_Slope_SE); q_counts <- table(fw_models$Quadrant)
 
-# Visualizations with Strict sprintf Formatting (Points 5, 7, 10)
-quad_palette <- c(
-  "High yield, high responsiveness" = "#2b8cbe",
-  "High yield, low responsiveness"  = "#2ca25f",
-  "Low yield, low responsiveness"   = "#7f7f7f",
-  "Low yield, high responsiveness"  = "#de2d26"
-)
-
-# 1. Biplot (Point 5)
-n_unadj <- sum(fw_models$CI_excludes_1)
-n_total <- nrow(fw_models)
-pct_unadj <- (n_unadj / n_total) * 100
-exp_chance <- 0.05 * n_total
-n_holm <- sum(fw_models$p_val_b1_holm < 0.05)
-med_se <- median(fw_models$FW_Slope_SE)
-q_counts <- table(fw_models$Quadrant)
-
-sub_biplot <- sprintf(
-  "Grand mean yield = %.4f %s; median slope SE = %.3f (df = 2).\nRings: 95%% CI excludes 1.0, unadjusted (n = %d of %d, %.1f%%; expected by chance = %.1f; Holm-adjusted = %d).\nQuadrants: %d High/High, %d High/Low, %d Low/Low, %d Low/High.",
-  grand_mean_yield, YIELD_UNIT_LABEL, med_se, n_unadj, n_total, pct_unadj, exp_chance, n_holm,
-  q_counts["High yield, high responsiveness"], q_counts["High yield, low responsiveness"],
-  q_counts["Low yield, low responsiveness"], q_counts["Low yield, high responsiveness"]
-)
-
-fw_label_df <- fw_models %>%
-  mutate(
-    rk_yield = rank(-Mean_Yield, ties.method = "first"),
-    rk_slope_hi = rank(-FW_Slope, ties.method = "first"),
-    rk_slope_lo = rank(FW_Slope, ties.method = "first"),
-    is_check = !grepl("^EDPIE_", Genotype)
-  ) %>%
-  filter(rk_yield <= 8 | (CI_excludes_1 & (rk_slope_hi <= 3 | rk_slope_lo <= 3)) | (is_check & rk_yield <= 40))
-
-p_fw_biplot <- ggplot(fw_models, aes(x = Mean_Yield, y = FW_Slope)) +
-  geom_hline(yintercept = 1.0, linetype = "dashed", color = "grey40", linewidth = 0.6) +
-  geom_vline(xintercept = grand_mean_yield, linetype = "dashed", color = "grey40", linewidth = 0.6) +
-  geom_point(aes(fill = Quadrant), shape = 21, color = "black", alpha = 0.75, size = 3.5) +
-  geom_point(data = filter(fw_models, CI_excludes_1),
-             aes(color = "95% CI excludes 1.0, unadjusted"),
-             shape = 21, size = 5.5, stroke = 1.4, fill = NA) +
-  ggrepel::geom_label_repel(
-    data = fw_label_df,
-    aes(x = Mean_Yield, y = FW_Slope, label = Genotype),
-    inherit.aes = FALSE, size = 2.75, fontface = "bold", color = "grey10",
-    fill = "white", alpha = 0.88, label.size = 0.25,
-    box.padding = 0.32, point.padding = 0.25, max.overlaps = 20, min.segment.length = 0.05, seed = 42
-  ) +
-  scale_fill_manual(values = quad_palette) +
-  scale_color_manual(name = "Unadjusted CI Ring:", values = c("95% CI excludes 1.0, unadjusted" = "black")) +
-  pub_theme +
-  labs(
-    title = "Finlay-Wilkinson Plasticity Biplot (Empirical Quadrant Partition)",
-    subtitle = sub_biplot,
-    x = sprintf("Mean Grain Yield Across Environments (%s)", YIELD_UNIT_LABEL),
-    y = "Environmental Responsiveness (Regression Slope, bi)",
-    fill = "Quadrant Classification:"
-  ) +
-  theme(
-    legend.box = "vertical",
-    legend.box.just = "center",
-    legend.spacing.y = unit(0.15, "cm")
-  ) +
-  guides(
-    fill = guide_legend(nrow = 2, byrow = TRUE, order = 1),
-    color = guide_legend(order = 2)
-  )
-ggsave(file.path(sec26_plas_dir, "Finlay_Wilkinson_Biplot.png"), plot = p_fw_biplot, width = 10.2, height = 7.8, dpi = 600)
-
-# 2. Reaction Norms (Point 7) with Realized Environment Index Anchors & IQR Quantile Bands
-fw_plot_df <- fw_df %>% left_join(fw_models %>% select(Genotype, Quadrant), by = "Genotype")
-
-fw_iqr_df <- fw_plot_df %>%
-  group_by(Quadrant, Environment, Env_Index) %>%
-  summarise(
-    q25_yld  = as.numeric(quantile(GrainYld, 0.25, na.rm = TRUE)),
-    q75_yld  = as.numeric(quantile(GrainYld, 0.75, na.rm = TRUE)),
-    mean_yld = mean(GrainYld, na.rm = TRUE),
-    .groups  = "drop"
+  # Clean Simplified Subtitles (Action 5B)
+  sub_biplot <- sprintf(
+    "Grand mean = %.3f %s | Median slope SE = %.2f (n = %d genotypes across 4 environments; %d High/High, %d High/Low, %d Low/Low, %d Low/High)\nBlack rings denote genotypes with unadjusted 95%% CI excluding b_i = 1.0 (n = %d [%.1f%%]; Holm-adjusted significant = %d)",
+    grand_mean_yield, YIELD_UNIT_LABEL, med_se, n_total,
+    q_counts["High yield, high responsiveness"], q_counts["High yield, low responsiveness"],
+    q_counts["Low yield, low responsiveness"], q_counts["Low yield, high responsiveness"],
+    n_unadj, pct_unadj, n_holm
   )
 
-env_anchor_df <- env_means %>%
-  arrange(Env_Index) %>%
-  mutate(
-    Short_Env = sprintf("%s\n(%.3f)", sub("Baseline", "Base", Environment), Env_Index),
-    y_top = max(fw_plot_df$GrainYld, na.rm = TRUE) * 1.04
+  fw_label_df <- fw_models %>% mutate(rk_yield = rank(-Mean_Yield, ties.method = "first"), rk_slope_hi = rank(-FW_Slope, ties.method = "first"), rk_slope_lo = rank(FW_Slope, ties.method = "first"), is_check = !grepl("^EDPIE_", Genotype)) %>% filter(rk_yield <= 8 | (CI_excludes_1 & (rk_slope_hi <= 3 | rk_slope_lo <= 3)) | (is_check & rk_yield <= 40))
+
+  p_fw_biplot <- ggplot(fw_models, aes(x = Mean_Yield, y = FW_Slope)) +
+    geom_hline(yintercept = 1.0, linetype = "dashed", color = "grey40", linewidth = 0.6) +
+    geom_vline(xintercept = grand_mean_yield, linetype = "dashed", color = "grey40", linewidth = 0.6) +
+    geom_point(aes(fill = Quadrant), shape = 21, color = "black", alpha = 0.75, size = 3.5) +
+    geom_point(data = filter(fw_models, CI_excludes_1), aes(color = "95% CI excludes 1.0, unadjusted"), shape = 21, size = 5.5, stroke = 1.4, fill = NA) +
+    ggrepel::geom_label_repel(data = fw_label_df, aes(x = Mean_Yield, y = FW_Slope, label = Genotype), inherit.aes = FALSE, size = 2.75, fontface = "bold", color = "grey10", fill = "white", alpha = 0.88, label.size = 0.25, box.padding = 0.32, point.padding = 0.25, max.overlaps = 20, min.segment.length = 0.05, seed = 42) +
+    scale_fill_manual(values = quad_palette) +
+    scale_color_manual(name = "Unadjusted CI Ring:", values = c("95% CI excludes 1.0, unadjusted" = "black")) +
+    pub_theme +
+    labs(title = "Finlay-Wilkinson Plasticity Biplot (Empirical Quadrant Partition)", subtitle = sub_biplot, x = sprintf("Mean Grain Yield Across Environments (%s)", YIELD_UNIT_LABEL), y = "Environmental Responsiveness (Regression Slope, b_i)", fill = "Quadrant Classification:") +
+    theme(plot.subtitle = element_text(size = 9.2, color = "grey20", lineheight = 1.15), legend.box = "vertical", legend.box.just = "center", legend.spacing.y = unit(0.15, "cm")) +
+    guides(fill = guide_legend(nrow = 2, byrow = TRUE, order = 1), color = guide_legend(order = 2))
+  ggsave(file.path(sec26_plas_dir, "Finlay_Wilkinson_Biplot.png"), plot = p_fw_biplot, width = 10.5, height = 8.0, dpi = 600)
+
+  fw_plot_df <- fw_df %>% left_join(fw_models %>% select(Genotype, Quadrant), by = "Genotype")
+  fw_iqr_df <- fw_plot_df %>% group_by(Quadrant, Environment, Env_Index) %>% summarise(q25_yld = as.numeric(quantile(GrainYld, 0.25, na.rm = TRUE)), q75_yld = as.numeric(quantile(GrainYld, 0.75, na.rm = TRUE)), mean_yld = mean(GrainYld, na.rm = TRUE), .groups = "drop")
+  env_anchor_df <- env_means %>% arrange(Env_Index) %>% mutate(Short_Env = sprintf("%s\n(%.3f)", sub("Baseline", "Base", Environment), Env_Index), y_top = max(fw_plot_df$GrainYld, na.rm = TRUE) * 1.04)
+
+  sub_norms <- sprintf("Linear reaction norms across 4 thermal regimes (N = 200; median slope SE = %.2f).\nVertical dotted lines mark realized environmental mean yields; shaded ribbons = 25\u201375%% IQR; bold lines = quadrant OLS regression.", med_se)
+
+  p_fw_norms <- ggplot(fw_plot_df, aes(x = Env_Index, y = GrainYld, group = Genotype)) +
+    geom_vline(data = env_anchor_df, aes(xintercept = Env_Index), linetype = "dotted", color = "grey45", linewidth = 0.55) +
+    geom_ribbon(data = fw_iqr_df, aes(x = Env_Index, ymin = q25_yld, ymax = q75_yld, fill = Quadrant, group = Quadrant), inherit.aes = FALSE, alpha = 0.18) +
+    geom_line(alpha = 0.20, color = "grey45", linewidth = 0.35) +
+    geom_smooth(aes(group = Quadrant, color = Quadrant), method = "lm", se = FALSE, linewidth = 1.35) +
+    geom_point(data = fw_iqr_df, aes(x = Env_Index, y = mean_yld, fill = Quadrant), inherit.aes = FALSE, shape = 21, size = 2.7, color = "black", stroke = 0.5) +
+    geom_text(data = env_anchor_df, aes(x = Env_Index, y = y_top, label = Short_Env), inherit.aes = FALSE, size = 2.55, fontface = "bold", color = "grey25", lineheight = 0.9, vjust = 0.5) +
+    scale_color_manual(values = quad_palette) + scale_fill_manual(values = quad_palette) +
+    scale_x_continuous(expand = expansion(mult = c(0.08, 0.08))) + scale_y_continuous(expand = expansion(mult = c(0.04, 0.12))) +
+    facet_wrap(~ Quadrant, nrow = 2) + pub_theme +
+    labs(title = "Finlay-Wilkinson Yield Reaction Norms by Empirical Quadrant", subtitle = sub_norms, x = sprintf("Environmental Quality Index (Mean Yield, %s)", YIELD_UNIT_LABEL), y = sprintf("Grain Yield (%s)", YIELD_UNIT_LABEL), color = "Quadrant:", fill = "Quadrant:") +
+    theme(plot.subtitle = element_text(size = 9.2, color = "grey20", lineheight = 1.15), legend.position = "none")
+  ggsave(file.path(sec26_plas_dir, "Finlay_Wilkinson_Reaction_Norms.png"), plot = p_fw_norms, width = 10.5, height = 8.2, dpi = 600)
+
+  sub_blup <- sprintf("Ordinary Least Squares (OLS) vs. Empirical Bayes REML random-regression BLUP slopes across 4 regimes (r = %.4f).\nRandom slope variance \u03c3\u00b2_b = %.4f vs. OLS variance = %.4f (Slope reliability = %.1f%%; LRT p = %.2f).", cor(fw_models$FW_Slope, fw_models$BLUP_Slope), sigma2_b, var_ols_slopes, slope_reliability * 100, p_val_mixture)
+
+  p_blup <- ggplot(fw_models, aes(x = FW_Slope, y = BLUP_Slope, color = Quadrant)) +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey40") +
+    geom_hline(yintercept = 1.0, linetype = "dotted", color = "grey60") +
+    geom_vline(xintercept = 1.0, linetype = "dotted", color = "grey60") +
+    geom_point(alpha = 0.8, size = 3) + scale_color_manual(values = quad_palette) + pub_theme +
+    labs(title = "Empirical Bayes BLUP Shrinkage of Environmental Responsiveness", subtitle = sub_blup, x = "Separate Regression OLS Slope (b_i)", y = "Shrunken BLUP Slope (Random Regression)", color = "Quadrant:") +
+    theme(plot.subtitle = element_text(size = 9.2, color = "grey20", lineheight = 1.15)) +
+    guides(color = guide_legend(nrow = 2, byrow = TRUE))
+  ggsave(file.path(sec26_plas_dir, "Finlay_Wilkinson_BLUP_Shrinkage.png"), plot = p_blup, width = 9.5, height = 7.6, dpi = 600)
+
+  fw_cluster_merged <- inner_join(fw_models %>% select(Genotype, FW_Quadrant = Quadrant, FW_Slope, Mean_Yield), master_profiles, by = "Genotype")
+  tab_s13_crosstab <- fw_cluster_merged %>% group_by(FW_Quadrant) %>% summarise(
+    Total_Genotypes = n(), Earlier_Peak_n = sum(Trajectory == "Earlier Proportional Peak"), Earlier_Peak_pct = round(100 * Earlier_Peak_n / n(), 1),
+    Later_Peak_n = sum(Trajectory == "Later Proportional Peak"), Later_Peak_pct = round(100 * Later_Peak_n / n(), 1),
+    High_Vigor_n = sum(Vigor == VIGOR_HI), High_Vigor_pct = round(100 * High_Vigor_n / n(), 1),
+    Low_Vigor_n = sum(Vigor == VIGOR_LO), Low_Vigor_pct = round(100 * Low_Vigor_n / n(), 1),
+    TSI_Stable_n = sum(Stability == "Stable"), TSI_Stable_pct = round(100 * TSI_Stable_n / n(), 1),
+    TSI_Contrasting_n = sum(Stability == "Contrasting"), TSI_Contrasting_pct = round(100 * TSI_Contrasting_n / n(), 1),
+    Mean_Yield = round(mean(Mean_Yield), 3), Mean_FW_Slope = round(mean(FW_Slope), 2), .groups = "drop")
+  write.csv(tab_s13_crosstab, file.path(sec26_plas_dir, "Table_S13_Finlay_Wilkinson_Quadrants_vs_Developmental_Clusters.csv"), row.names = FALSE)
+
+  # 8.3 Quantitative Comparison: Empirical Agronomic FW Quadrants vs. Unsupervised Clustering (K-Means, PAM, Ward.D2)
+  fw_std_mat <- scale(as.matrix(fw_models[, c("Mean_Yield", "FW_Slope")]))
+  dist_fw <- dist(fw_std_mat)
+  set.seed(42)
+  km4_fw   <- kmeans(fw_std_mat, centers = 4, nstart = 100)
+  km2_fw   <- kmeans(fw_std_mat, centers = 2, nstart = 100)
+  pam4_fw  <- cluster::pam(fw_std_mat, k = 4)
+  hc4_fw   <- cutree(hclust(dist_fw, method = "ward.D2"), k = 4)
+
+  sil_quad <- mean(cluster::silhouette(as.integer(fw_models$Quadrant), dist_fw)[, "sil_width"])
+  sil_km4  <- mean(cluster::silhouette(km4_fw$cluster, dist_fw)[, "sil_width"])
+  sil_pam4 <- mean(cluster::silhouette(pam4_fw$clustering, dist_fw)[, "sil_width"])
+  sil_hc4  <- mean(cluster::silhouette(hc4_fw, dist_fw)[, "sil_width"])
+  sil_km2  <- mean(cluster::silhouette(km2_fw$cluster, dist_fw)[, "sil_width"])
+
+  calc_ari_simple <- function(x, y) {
+    tab <- table(x, y)
+    sum_comb_ij <- sum(choose(tab, 2))
+    sum_comb_i  <- sum(choose(rowSums(tab), 2))
+    sum_comb_j  <- sum(choose(colSums(tab), 2))
+    n_tot_c     <- choose(length(x), 2)
+    exp_idx     <- (sum_comb_i * sum_comb_j) / n_tot_c
+    max_idx     <- 0.5 * (sum_comb_i + sum_comb_j)
+    (sum_comb_ij - exp_idx) / (max_idx - exp_idx)
+  }
+
+  # Compute LOEO stability for Unsupervised K-Means (K = 4, K = 2), PAM (K = 4), and Ward.D2 (K = 4)
+  match_cluster_reclass_pct <- function(cl_ref, cl_sub) {
+    tab <- table(cl_ref, cl_sub)
+    k_cl <- nrow(tab)
+    if (k_cl == 2L) {
+      best_match <- max(sum(diag(tab)), tab[1, 2] + tab[2, 1])
+    } else {
+      perms <- as.matrix(expand.grid(rep(list(seq_len(k_cl)), k_cl)))
+      perms <- perms[apply(perms, 1, function(r) length(unique(r)) == k_cl), , drop = FALSE]
+      best_match <- max(apply(perms, 1, function(p) sum(tab[cbind(seq_len(k_cl), p)])))
+    }
+    (1.0 - best_match / length(cl_ref)) * 100
+  }
+
+  loeo_km4_changes  <- numeric(length(envs_loeo))
+  loeo_pam4_changes <- numeric(length(envs_loeo))
+  loeo_hc4_changes  <- numeric(length(envs_loeo))
+  loeo_km2_changes  <- numeric(length(envs_loeo))
+  for (k in seq_along(envs_loeo)) {
+    left_out <- envs_loeo[k]
+    sub_df <- blues_df %>% filter(Environment != left_out)
+    sub_env_means <- sub_df %>% group_by(Environment) %>% summarise(Env_Index_sub = mean(GrainYld, na.rm = TRUE), .groups = "drop")
+    sub_df <- sub_df %>% left_join(sub_env_means, by = "Environment")
+    sub_fw <- sub_df %>% group_by(Genotype) %>% do({ mod <- lm(GrainYld ~ Env_Index_sub, data = .); data.frame(Mean_Yield = mean(.$GrainYld, na.rm = TRUE), FW_Slope = coef(mod)["Env_Index_sub"]) }) %>% ungroup()
+    sub_fw <- sub_fw[match(fw_models$Genotype, sub_fw$Genotype), ]
+    sub_std <- scale(as.matrix(sub_fw[, c("Mean_Yield", "FW_Slope")]))
+    set.seed(42)
+    km4_sub  <- kmeans(sub_std, centers = km4_fw$centers, iter.max = 100)
+    pam4_sub <- cluster::pam(sub_std, k = 4)
+    hc4_sub  <- cutree(hclust(dist(sub_std), method = "ward.D2"), k = 4)
+    km2_sub  <- kmeans(sub_std, centers = km2_fw$centers, iter.max = 100)
+    loeo_km4_changes[k]  <- match_cluster_reclass_pct(km4_fw$cluster, km4_sub$cluster)
+    loeo_pam4_changes[k] <- match_cluster_reclass_pct(pam4_fw$clustering, pam4_sub$clustering)
+    loeo_hc4_changes[k]  <- match_cluster_reclass_pct(hc4_fw, hc4_sub)
+    loeo_km2_changes[k]  <- match_cluster_reclass_pct(km2_fw$cluster, km2_sub$cluster)
+  }
+
+  fw_clustering_comp <- data.frame(
+    Classification_Method = c(
+      "Empirical Agronomic Quadrants (Y_bar = 0.659, b_i = 1.0)",
+      "Unsupervised K-Means Clustering (K = 4 on Std. Yield & Slope)",
+      "Unsupervised PAM Medoids (K = 4 on Std. Yield & Slope)",
+      "Unsupervised Ward.D2 Hierarchical (K = 4 on Std. Yield & Slope)",
+      "Unsupervised K-Means Clustering (Optimal K = 2 on Std. Yield & Slope)"
+    ),
+    Number_of_Groups = c(4L, 4L, 4L, 4L, 2L),
+    Mean_Silhouette_Width = round(c(sil_quad, sil_km4, sil_pam4, sil_hc4, sil_km2), 4),
+    ARI_vs_Empirical_Quadrants = round(c(1.0000, calc_ari_simple(fw_models$Quadrant, km4_fw$cluster),
+                                         calc_ari_simple(fw_models$Quadrant, pam4_fw$clustering),
+                                         calc_ari_simple(fw_models$Quadrant, hc4_fw),
+                                         calc_ari_simple(fw_models$Quadrant, km2_fw$cluster)), 4),
+    Mean_LOEO_Reclassification_Pct = round(c(mean(loeo_summary$OLS_Changed_Pct), mean(loeo_km4_changes), mean(loeo_pam4_changes), mean(loeo_hc4_changes), mean(loeo_km2_changes)), 2),
+    Boundary_Anchor_Type = c(
+      "Fixed Biological/Agronomic Benchmark (b_i = 1.0 population average response; Y_bar = grand mean)",
+      "Data-Driven Sample Centroid Partition (shifts sample-to-sample; cuts across b_i = 1.0)",
+      "Data-Driven Sample Medoid Partition (shifts sample-to-sample; cuts across b_i = 1.0)",
+      "Data-Driven Agglomerative Tree Cut (sensitive to extreme slope outliers)",
+      "Data-Driven Diagonal Split (conflates yield and slope into a single axis)"
+    ),
+    Recommendation_and_Interpretation = c(
+      "RECOMMENDED: Preserves Finlay & Wilkinson (1963) canonical biological benchmark (b_i = 1.0) while acknowledging continuous bivariate distribution.",
+      "Not recommended as primary: Only +0.05 silhouette gain over fixed quadrants (0.35 vs 0.30; both < 0.50 confirming a continuous unimodal cloud, not discrete clusters) and worse LOEO stability.",
+      "Not recommended: Similar weak silhouette (< 0.35) and loses fixed b_i = 1.0 physiological reference.",
+      "Not recommended: Lowest silhouette among unsupervised K=4 methods and sensitive to outlier slopes.",
+      "Not recommended: Collapses 2D Yield x Plasticity space into 2 diagonal groups, losing the High-Yield/Low-Slope vs High-Yield/High-Slope distinction."
+    ),
+    stringsAsFactors = FALSE
   )
+  write.csv(fw_clustering_comp, file.path(sec26_plas_dir, "Table_S12C_FW_Quadrant_vs_Unsupervised_Clustering_Comparison.csv"), row.names = FALSE)
 
-sub_norms <- sprintf(
-  "Genotype reaction norms across 4 environments (df = 2, median slope SE = %.3f).\nVertical dotted lines mark the 4 realized environmental quality indices; shaded band = 25-75%% IQR; heavy line = quadrant OLS fit.",
-  med_se
-)
-
-p_fw_norms <- ggplot(fw_plot_df, aes(x = Env_Index, y = GrainYld, group = Genotype)) +
-  geom_vline(data = env_anchor_df, aes(xintercept = Env_Index), linetype = "dotted", color = "grey45", linewidth = 0.55) +
-  geom_ribbon(
-    data = fw_iqr_df,
-    aes(x = Env_Index, ymin = q25_yld, ymax = q75_yld, fill = Quadrant, group = Quadrant),
-    inherit.aes = FALSE, alpha = 0.18
-  ) +
-  geom_line(alpha = 0.20, color = "grey45", linewidth = 0.35) +
-  geom_smooth(aes(group = Quadrant, color = Quadrant), method = "lm", se = FALSE, linewidth = 1.35) +
-  geom_point(
-    data = fw_iqr_df,
-    aes(x = Env_Index, y = mean_yld, fill = Quadrant),
-    inherit.aes = FALSE, shape = 21, size = 2.7, color = "black", stroke = 0.5
-  ) +
-  geom_text(
-    data = env_anchor_df,
-    aes(x = Env_Index, y = y_top, label = Short_Env),
-    inherit.aes = FALSE, size = 2.55, fontface = "bold", color = "grey25", lineheight = 0.9, vjust = 0.5
-  ) +
-  scale_color_manual(values = quad_palette) +
-  scale_fill_manual(values = quad_palette) +
-  scale_x_continuous(expand = expansion(mult = c(0.08, 0.08))) +
-  scale_y_continuous(expand = expansion(mult = c(0.04, 0.12))) +
-  facet_wrap(~ Quadrant, nrow = 2) +
-  pub_theme +
-  labs(
-    title = "Finlay-Wilkinson Yield Reaction Norms by Empirical Quadrant",
-    subtitle = sub_norms,
-    x = sprintf("Environmental Quality Index (Mean Yield, %s)", YIELD_UNIT_LABEL),
-    y = sprintf("Grain Yield (%s)", YIELD_UNIT_LABEL),
-    color = "Quadrant:", fill = "Quadrant:"
-  ) +
-  theme(legend.position = "none")
-ggsave(file.path(sec26_plas_dir, "Finlay_Wilkinson_Reaction_Norms.png"), plot = p_fw_norms, width = 10.2, height = 8.0, dpi = 600)
-
-# 3. BLUP Shrinkage Plot (Points 3, 4)
-sub_blup <- sprintf(
-  "Comparison of separate OLS slopes (df = 2) with shrunken BLUP slopes.\nModel: centred lmer(GrainYld ~ Env_Index_c + (1 + Env_Index_c | Genotype)).\nSlope variance sigma^2_b = %.4f; Var(OLS) = %.4f; Slope Reliability = %.2f%%; correlation r = %.4f.",
-  sigma2_b, var_ols_slopes, slope_reliability * 100, cor(fw_models$FW_Slope, fw_models$BLUP_Slope)
-)
-
-p_blup <- ggplot(fw_models, aes(x = FW_Slope, y = BLUP_Slope, color = Quadrant)) +
-  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "grey40") +
-  geom_hline(yintercept = 1.0, linetype = "dotted", color = "grey60") +
-  geom_vline(xintercept = 1.0, linetype = "dotted", color = "grey60") +
-  geom_point(alpha = 0.8, size = 3) +
-  scale_color_manual(values = quad_palette) +
-  pub_theme +
-  labs(
-    title = "Empirical Bayes BLUP Shrinkage of Environmental Responsiveness",
-    subtitle = sub_blup,
-    x = "Separate Regression OLS Slope (bi)",
-    y = "Shrunken BLUP Slope (Random Regression)",
-    color = "Quadrant:"
-  ) +
-  guides(color = guide_legend(nrow = 2, byrow = TRUE))
-ggsave(file.path(sec26_plas_dir, "Finlay_Wilkinson_BLUP_Shrinkage.png"), plot = p_blup, width = 9.0, height = 7.5, dpi = 600)
-
-cat(sprintf("  -> Section 8 Completed Successfully.\n"))
-cat(sprintf("     Grand mean yield: %.4f %s\n", grand_mean_yield, YIELD_UNIT_LABEL))
-cat(sprintf("     Median slope SE:  %.3f\n", med_se))
-cat(sprintf("     Unadjusted CI exclusions: %d / %d (%.2f%%); Holm-adjusted: %d\n", n_unadj, n_total, pct_unadj, n_holm))
-cat(sprintf("     Heterogeneity F-test: F(%d, %d) = %.4f, p = %.4e\n", df_num, df_den, f_stat, p_val_f))
-cat(sprintf("     LMM random slope LRT mixture p-value: %.4e\n", p_val_mixture))
-cat(sprintf("     Slope reliability ratio: %.2f%%\n", slope_reliability * 100))
-cat(sprintf("     LOEO mean instability: OLS = %.2f%%, BLUP = %.2f%%\n",
-            mean(loeo_summary$OLS_Changed_Pct), mean(loeo_summary$BLUP_Changed_Pct)))
-cat(sprintf("     Heuristic perturbation quadrant change: %.2f%%\n", heuristic_pert_pct))
+  if (requireNamespace("openxlsx", quietly = TRUE)) {
+    wb_plas <- openxlsx::createWorkbook()
+    for (shp in list(
+      list(name = "Table_S12A_FW_Quadrant_Summary", data = quad_summary),
+      list(name = "Table_S12B_LOEO_Stability", data = loeo_summary),
+      list(name = "Table_S12C_Quadrant_vs_Unsup", data = fw_clustering_comp),
+      list(name = "Table_S13_FW_vs_Pheno_Clusters", data = tab_s13_crosstab),
+      list(name = "Table_S14_All_200_FW_Slopes", data = fw_models)
+    )) {
+      openxlsx::addWorksheet(wb_plas, shp$name)
+      openxlsx::writeDataTable(wb_plas, shp$name, shp$data, withFilter = TRUE)
+      openxlsx::freezePane(wb_plas, shp$name, firstRow = TRUE)
+      openxlsx::setColWidths(wb_plas, shp$name, cols = seq_len(ncol(shp$data)), widths = "auto")
+    }
+    openxlsx::saveWorkbook(wb_plas, file.path(sec26_plas_dir, "Table_S12_to_S14_SUPPLEMENTARY_Finlay_Wilkinson_Plasticity.xlsx"), overwrite = TRUE)
+  }
+  cat("  -> Section 8 Completed Successfully.\n")
 } else {
   cat("  -> Section 8 [SKIPPED - Assets Finalized & Protected]\n")
 }
 
-
 # ==============================================================================
-# SECTION 9: MULTI-ENVIRONMENT GGE STABILITY & WAASBY SELECTION
+# SECTION 9: MULTI-ENVIRONMENT GGE STABILITY & UNIFIED IDEOTYPE SELECTION
 # ==============================================================================
-cat(">>> Executing Section 9: Multi-Environment Stability (GGE & WAASBY)...\n")
+cat(">>> Executing Section 9: Multi-Environment Stability (GGE & Unified Ideotype Index)...\n")
 
 if (isTRUE(RUN_SECTION_9_GGE_STABILITY)) {
-  sec27_dir <- file.path(assets_dir, "Section_2.7_GGE_Stability")
+  sec27_dir <- file.path(assets_dir, "Section_2.8_GGE_Stability")
   dir.create(sec27_dir, showWarnings = FALSE, recursive = TRUE)
 
-  # Fit GGE Model via 'metan' on Stage-1 BLUEs
-  gge_fit <- gge(blues_df, env = Env_Factor, gen = Genotype, resp = GrainYld)
+  # Archive redundant TIFF copy if present so only 1 clean GGE figure exists in Section_2.8_GGE_Stability
+  redundant_tiff <- file.path(sec27_dir, "Figure_S_GGE_Composite.tiff")
+  if (file.exists(redundant_tiff)) {
+    arch_sec28 <- file.path(archive_rejected_dir, "Section_2.8_Redundant_Assets")
+    dir.create(arch_sec28, showWarnings = FALSE, recursive = TRUE)
+    file.copy(redundant_tiff, file.path(arch_sec28, "Figure_S_GGE_Composite.tiff"), overwrite = TRUE)
+    unlink(redundant_tiff)
+  }
 
-  # metan: type = 3 is Which-Won-Where / Mega-Environment; type = 2 is Mean vs. Stability
-  fig_gge_mega <- plot(gge_fit, type = 3,
-                       col.env = "darkred", size.env = 5, size.text.env = 5,
-                       col.gen = "gray60", size.text.gen = 1.0,
-                       title = FALSE, plot_theme = theme_bw()) +
-    labs(title = "Mega-Environment Delineation (Which-Won-Where)") +
-    theme(legend.position = "none", plot.title = element_text(face = "bold", hjust = 0.5))
-
-  fig_gge_stab <- plot(gge_fit, type = 2,
-                       col.env = "darkblue", size.env = 5, size.text.env = 5,
-                       col.gen = "gray60", size.text.gen = 1.0,
-                       title = FALSE, plot_theme = theme_bw()) +
-    labs(title = "Mean Performance vs. Yield Stability (AEC)") +
-    theme(legend.position = "none", plot.title = element_text(face = "bold", hjust = 0.5))
-
-  composite_gge <- (fig_gge_mega | fig_gge_stab) +
-    plot_annotation(tag_levels = 'A') & theme(plot.tag = element_text(face = 'bold', size = 16))
-
-  ggsave(file.path(sec27_dir, "Figure_S_GGE_Composite.tiff"), plot = composite_gge, width = 14, height = 6, dpi = 900, compression = "lzw")
-
-  # Stage-2 BLUE-based stability metrics (primary ranking)
-  yld_wide <- blues_df %>% select(Genotype, Env_Factor, GrainYld) %>%
-    pivot_wider(names_from = Env_Factor, values_from = GrainYld) %>% arrange(Genotype)
+  yld_wide <- blues_df %>% select(Genotype, Env_Factor, GrainYld) %>% pivot_wider(names_from = Env_Factor, values_from = GrainYld) %>% arrange(Genotype)
   yld_mat <- as.matrix(yld_wide[, env_metadata$Env_Name]); rownames(yld_mat) <- yld_wide$Genotype
-  gge_svd <- svd(scale(yld_mat, center = colMeans(yld_mat), scale = FALSE))
-  pc1_sc <- gge_svd$u[, 1] * sqrt(gge_svd$d[1])
-  pc2_sc <- gge_svd$u[, 2] * sqrt(gge_svd$d[2])
-  # Orient PC1 so that it correlates positively with mean yield
-  if (cor(pc1_sc, rowMeans(yld_mat)) < 0) pc1_sc <- -pc1_sc
+  yld_std_mat <- scale(yld_mat)
+
+  # Exact environment-centered GGE SVD (symmetrical singular value partitioning, svp = 0.5)
+  gge_centered <- scale(yld_mat, center = colMeans(yld_mat), scale = FALSE)
+  gge_svd <- svd(gge_centered)
+  var_expl_pc <- (gge_svd$d^2 / sum(gge_svd$d^2)) * 100
+  g_sc <- sweep(gge_svd$u[, 1:2, drop = FALSE], 2, sqrt(gge_svd$d[1:2]), `*`)
+  e_sc <- sweep(gge_svd$v[, 1:2, drop = FALSE], 2, sqrt(gge_svd$d[1:2]), `*`)
+  if (cor(g_sc[, 1], rowMeans(yld_mat)) < 0) {
+    g_sc[, 1] <- -g_sc[, 1]
+    e_sc[, 1] <- -e_sc[, 1]
+  }
+  aec_vec <- colMeans(e_sc)
+  a_u <- aec_vec / sqrt(sum(aec_vec^2))
+  o_u <- c(-a_u[2], a_u[1])
+  aec_proj <- as.numeric(g_sc %*% a_u)
+  aec_orth_signed <- as.numeric(g_sc %*% o_u)
+  aec_orth_pen <- abs(aec_orth_signed)
+
   del_cols <- env_metadata$Env_Name[env_metadata$Location == "Delhi"]
+  pz_cols  <- env_metadata$Env_Name[env_metadata$Location == "Dharwad"]
+
+  # Per-zone standardized yield and stability (2 environments per zone)
+  nwpz_std_mean <- rowMeans(yld_std_mat[, del_cols, drop = FALSE])
+  nwpz_stab_pen <- abs(yld_std_mat[, del_cols[1]] - yld_std_mat[, del_cols[2]]) / sqrt(2)
+  pz_std_mean   <- rowMeans(yld_std_mat[, pz_cols, drop = FALSE])
+  pz_stab_pen   <- abs(yld_std_mat[, pz_cols[1]] - yld_std_mat[, pz_cols[2]]) / sqrt(2)
+
   stage2_metrics <- data.frame(
     Genotype = rownames(yld_mat),
     Mean_Yield_4Env_BLUE = rowMeans(yld_mat),
+    Mean_Std_Yield_4Env  = rowMeans(yld_std_mat),
     Mean_Yield_Delhi_Randomized = rowMeans(yld_mat[, del_cols, drop = FALSE]),
-    GGE_PC1_Score = pc1_sc,
-    GGE_PC2_Score = pc2_sc,
-    GGE_AEC_Stability_Penalty = abs(pc2_sc),
+    Mean_Yield_PZ_Descriptive   = rowMeans(yld_mat[, pz_cols, drop = FALSE]),
+    GGE_PC1_Score = g_sc[, 1],
+    GGE_PC2_Score = g_sc[, 2],
+    GGE_AEC_Projection = aec_proj,
+    GGE_AEC_Orthogonal_Signed = aec_orth_signed,
+    GGE_AEC_Stability_Penalty = aec_orth_pen,
+    NWPZ_Zone_Std_Yield = nwpz_std_mean,
+    NWPZ_Zone_Stability_Penalty = nwpz_stab_pen,
+    PZ_Zone_Std_Yield = pz_std_mean,
+    PZ_Zone_Stability_Penalty = pz_stab_pen,
     stringsAsFactors = FALSE
-  ) %>%
-    mutate(
-      Stage2_Yield_Stability_Index = as.numeric(scale(Mean_Yield_4Env_BLUE)) - as.numeric(scale(GGE_AEC_Stability_Penalty))
-    )
+  ) %>% mutate(
+    Stage2_Yield_Stability_Index = (as.numeric(scale(Mean_Std_Yield_4Env)) + as.numeric(scale(-GGE_AEC_Stability_Penalty))) / 2,
+    NWPZ_Zone_Ideotype_Z = (as.numeric(scale(NWPZ_Zone_Std_Yield)) + as.numeric(scale(-NWPZ_Zone_Stability_Penalty))) / 2,
+    PZ_Zone_Ideotype_Z   = (as.numeric(scale(PZ_Zone_Std_Yield)) + as.numeric(scale(-PZ_Zone_Stability_Penalty))) / 2
+  )
 
-  # Plot-level WAASB retained only as a clearly flagged reference (pooled plots include Dharwad pseudo-replicates)
   waasb_ref <- tryCatch({
     waasb_model <- waasb(master_raw, env = Env_Factor, gen = Genotype, rep = Replication, resp = c(GrainYld, AUTPC), verbose = FALSE)
-    waasb_model$GrainYld$model %>% filter(type == "GEN") %>%
-      select(Genotype = Code, WAASB_PlotLevel_PseudoRep_Ref = WAASB, WAASBY_PlotLevel_PseudoRep_Ref = WAASBY)
+    waasb_model$GrainYld$model %>% filter(type == "GEN") %>% select(Genotype = Code, WAASB_PlotLevel_PseudoRep_Ref = WAASB, WAASBY_PlotLevel_PseudoRep_Ref = WAASBY)
   }, error = function(e) {
-    cat("  WAASB reference skipped:", conditionMessage(e), "\n")
-    data.frame(Genotype = stage2_metrics$Genotype, WAASB_PlotLevel_PseudoRep_Ref = NA_real_, WAASBY_PlotLevel_PseudoRep_Ref = WAASBY)
+    data.frame(Genotype = stage2_metrics$Genotype, WAASB_PlotLevel_PseudoRep_Ref = NA_real_, WAASBY_PlotLevel_PseudoRep_Ref = NA_real_)
   })
 
-  # Multi-trait means across 4 environments for comprehensive breeder selection
-  multi_trait_means <- blues_df %>%
-    group_by(Genotype) %>%
-    summarise(
-      Mean_TKW_4Env        = mean(TKW, na.rm = TRUE),
-      Mean_PT_4Env         = mean(PT_Count, na.rm = TRUE),
-      Mean_TCE_4Env        = mean(TCE, na.rm = TRUE),
-      Mean_AUTPC_norm_4Env = mean(AUTPC_norm, na.rm = TRUE),
-      Yield_NWPZ_Baseline  = mean(GrainYld[Environment == "NWPZ Baseline"], na.rm = TRUE),
-      Yield_PZ_Acute       = mean(GrainYld[Environment == "PZ Acute"], na.rm = TRUE),
-      .groups = "drop"
-    )
+  tce_med_base <- median(blues_df$TCE[blues_df$Environment == "NWPZ Baseline"], na.rm = TRUE)
+  multi_trait_means <- blues_df %>% group_by(Genotype) %>% summarise(
+    Mean_TKW_4Env = mean(TKW, na.rm = TRUE), Mean_PT_4Env = mean(PT_Count, na.rm = TRUE),
+    Mean_TCE_4Env = mean(TCE, na.rm = TRUE), Mean_AUTPC_norm_4Env = mean(AUTPC_norm, na.rm = TRUE),
+    Mean_TCE_Delhi = mean(TCE[Environment %in% c("NWPZ Baseline", "NWPZ Warm")], na.rm = TRUE),
+    Mean_AUTPC_norm_Delhi = mean(AUTPC_norm[Environment %in% c("NWPZ Baseline", "NWPZ Warm")], na.rm = TRUE),
+    Yield_NWPZ_Baseline = mean(GrainYld[Environment == "NWPZ Baseline"], na.rm = TRUE),
+    Yield_NWPZ_Warm     = mean(GrainYld[Environment == "NWPZ Warm"], na.rm = TRUE),
+    Yield_PZ_Warm_I     = mean(GrainYld[Environment == "PZ Warm I"], na.rm = TRUE),
+    Yield_PZ_Warm_II    = mean(GrainYld[Environment == "PZ Warm II"], na.rm = TRUE),
+    Trajectory_Baseline = first(Trajectory_Baseline[Environment == "NWPZ Baseline"]),
+    Vigor_Baseline      = first(Vigor_Baseline[Environment == "NWPZ Baseline"]),
+    TCE_Class_Baseline  = ifelse(mean(TCE[Environment == "NWPZ Baseline"], na.rm = TRUE) >= tce_med_base, "Higher Conversion", "Lower Conversion"),
+    .groups = "drop"
+  )
 
+  # Approach 2: Rank on Yield + Exact AEC Stability; keep tillering traits as diagnostic columns
   filtering_matrix <- stage2_metrics %>%
     left_join(waasb_ref, by = "Genotype") %>%
-    left_join(tsi_df %>% select(Genotype, TSI_Global = TSI, TSI_Delhi), by = "Genotype") %>%
+    left_join(tsi_df %>% select(Genotype, TSI_Global = TSI_PZ_WarmII, TSI_Delhi, TSI_Class = Stability), by = "Genotype") %>%
     left_join(multi_trait_means, by = "Genotype") %>%
-    arrange(desc(Stage2_Yield_Stability_Index)) %>%
-    mutate(Filtering_Rank = row_number())
+    mutate(
+      Master_Profile  = paste(substr(Trajectory_Baseline, 1, 3), ifelse(Vigor_Baseline == VIGOR_HI, "HiVig", "LoVig"), substr(TSI_Class, 1, 4), sep = "-"),
+      z_Mean_Yield    = as.numeric(scale(Mean_Std_Yield_4Env)),
+      z_Opt_Yield     = as.numeric(scale(Yield_NWPZ_Baseline)),
+      z_NWPZ_Warm_Yld = as.numeric(scale(Yield_NWPZ_Warm)),
+      z_PZ_Yield      = as.numeric(scale(Yield_PZ_Warm_II)),
+      z_Stability     = as.numeric(scale(-GGE_AEC_Stability_Penalty)),
+      z_TSI           = as.numeric(scale(TSI_Global)),
+      z_TCE           = as.numeric(scale(Mean_TCE_4Env)),
+      z_AUTPC_norm    = as.numeric(scale(Mean_AUTPC_norm_4Env)),
+      Composite_Ideotype_Z = (z_Mean_Yield + z_Stability) / 2
+    ) %>%
+    arrange(desc(Composite_Ideotype_Z)) %>%
+    mutate(
+      Ideotype_Rank = row_number(),
+      Yield_Stability_Rank = rank(-Stage2_Yield_Stability_Index, ties.method = "first"),
+      NWPZ_Zone_Rank = rank(-NWPZ_Zone_Ideotype_Z, ties.method = "first"),
+      PZ_Zone_Rank   = rank(-PZ_Zone_Ideotype_Z, ties.method = "first"),
+      Filtering_Rank = Ideotype_Rank
+    )
 
   write.csv(filtering_matrix, file.path(sec27_dir, "Final_Genotype_Filtering_Matrix.csv"), row.names = FALSE)
 
-  # 9.2 Multi-Trait Breeder Ideotype Profiling (Top 10 Selected Lines vs Named Cultivars/Checks)
-  ideo_pop <- filtering_matrix %>%
+  # Export Per-Zone Ideotype Tables (NWPZ Randomized Benchmark vs PZ Descriptive)
+  nwpz_zone_table <- filtering_matrix %>% arrange(NWPZ_Zone_Rank)
+  pz_zone_table   <- filtering_matrix %>% arrange(PZ_Zone_Rank)
+  write.csv(nwpz_zone_table, file.path(sec27_dir, "Table_Ideotype_Ranking_NWPZ_Zone.csv"), row.names = FALSE)
+  write.csv(pz_zone_table,   file.path(sec27_dir, "Table_Ideotype_Ranking_PZ_Zone.csv"), row.names = FALSE)
+
+  # ============================================================================
+  # 9.1 CUSTOM HIGH-LEGIBILITY 2-PANEL GGE BIPLOT (Figure_S7_GGE_Composite.png)
+  # ============================================================================
+  # Uniform scalar factor for environment vectors so they match the genotype hull radius (preserving all angles & projections)
+  max_g_rad <- max(sqrt(filtering_matrix$GGE_PC1_Score^2 + filtering_matrix$GGE_PC2_Score^2))
+  max_e_rad <- max(sqrt(e_sc[, 1]^2 + e_sc[, 2]^2))
+  env_scale_fac <- (max_g_rad * 0.92) / max_e_rad
+
+  gge_env_plot_df <- data.frame(
+    Env = env_metadata$Env_Name,
+    Zone = ifelse(env_metadata$Location == "Delhi", "NWPZ Sector (Cooler / Longer Season)", "PZ Sector (Chronic Peninsular Heat)"),
+    PC1 = e_sc[, 1] * env_scale_fac,
+    PC2 = e_sc[, 2] * env_scale_fac,
+    stringsAsFactors = FALSE
+  )
+
+  # Convex Hull (Which-Won-Where Polygon) & Perpendicular Equality Rays from Origin (0,0)
+  hull_idx <- chull(filtering_matrix$GGE_PC1_Score, filtering_matrix$GGE_PC2_Score)
+  hull_closed_idx <- c(hull_idx, hull_idx[1])
+  hull_df <- filtering_matrix[hull_idx, ]
+  hull_poly_df <- filtering_matrix[hull_closed_idx, ]
+
+  perp_rays <- list()
+  ray_len <- max_g_rad * 1.18
+  for (i in seq_along(hull_idx)) {
+    p1 <- c(hull_poly_df$GGE_PC1_Score[i], hull_poly_df$GGE_PC2_Score[i])
+    p2 <- c(hull_poly_df$GGE_PC1_Score[i + 1], hull_poly_df$GGE_PC2_Score[i + 1])
+    edge_vec <- p2 - p1
+    # Outward normal from origin (0,0) perpendicular to polygon edge p1->p2
+    n_vec <- c(-edge_vec[2], edge_vec[1])
+    if (sum(n_vec * ((p1 + p2) / 2)) < 0) n_vec <- -n_vec
+    n_unit <- n_vec / sqrt(sum(n_vec^2))
+    perp_rays[[i]] <- data.frame(x0 = 0, y0 = 0, x1 = n_unit[1] * ray_len, y1 = n_unit[2] * ray_len)
+  }
+  perp_rays_df <- bind_rows(perp_rays)
+
+  # Classify genotypes for GGE Panel A (Winning Vertex / Top Sector Specialists / Released Checks)
+  key_checks_vec <- c("DBW327", "PBW826", "DBW296", "MACS6222", "HD3354", "HS680", "HD3086")
+  gge_gen_plot_df <- filtering_matrix %>%
     mutate(
-      z_Mean_Yield   = as.numeric(scale(Mean_Yield_4Env_BLUE)),
-      z_Opt_Yield    = as.numeric(scale(Yield_NWPZ_Baseline)),
-      z_Acute_Yield  = as.numeric(scale(Yield_PZ_Acute)),
-      z_Stability    = as.numeric(scale(-GGE_AEC_Stability_Penalty)),
-      z_TSI          = as.numeric(scale(TSI_Global)),
-      z_TKW          = as.numeric(scale(Mean_TKW_4Env)),
-      z_TCE          = as.numeric(scale(Mean_TCE_4Env)),
-      z_AUTPC_norm   = as.numeric(scale(Mean_AUTPC_norm_4Env)),
-      Line_Category  = case_when(
-        Filtering_Rank <= 10 ~ "Top 10 Selected Lines",
-        !grepl("^EDPIE_", Genotype) ~ "Named Cultivar / Check",
-        TRUE ~ "Other Panel Lines"
+      Is_Vertex = Genotype %in% hull_df$Genotype,
+      Is_Key_Check = Genotype %in% key_checks_vec,
+      Adaptation_Group = case_when(
+        Ideotype_Rank <= 10 ~ "Top 10 Broad Yield-Stability Ideotypes",
+        NWPZ_Zone_Rank <= 10 ~ "Top 10 NWPZ Zone Specialists",
+        PZ_Zone_Rank <= 10 ~ "Top 10 PZ Zone Specialists",
+        Is_Vertex ~ "Polygon Vertex (Extreme GxE Profile)",
+        TRUE ~ "Other Panel Genotypes (n = 200)"
+      ),
+      Adaptation_Group = factor(Adaptation_Group, levels = c(
+        "Top 10 Broad Yield-Stability Ideotypes",
+        "Top 10 NWPZ Zone Specialists",
+        "Top 10 PZ Zone Specialists",
+        "Polygon Vertex (Extreme GxE Profile)",
+        "Other Panel Genotypes (n = 200)"
+      )),
+      Label_PanelA = ifelse(
+        Is_Vertex | Genotype %in% c("DBW327", "ADT_159", "DBW296", "ADT_150", "PBW826", "EDPIE_9600"),
+        ifelse(Is_Key_Check, paste0(Genotype, " ★"), Genotype),
+        NA_character_
       )
     )
 
-  ideo_subset <- ideo_pop %>%
-    filter(Filtering_Rank <= 10 | (!grepl("^EDPIE_", Genotype) & Filtering_Rank <= 120)) %>%
-    arrange(Filtering_Rank) %>%
-    slice_head(n = 16)
-
-  write.csv(ideo_subset, file.path(sec27_dir, "Table_Top10_vs_Checks_Ideotype_Summary.csv"), row.names = FALSE)
-
-  z_cols <- c("z_Mean_Yield", "z_Opt_Yield", "z_Acute_Yield", "z_Stability", "z_TSI", "z_TKW", "z_TCE", "z_AUTPC_norm")
-  z_labels <- c(
-    "z_Mean_Yield"  = "4-Env Mean Yield",
-    "z_Opt_Yield"   = "Optimal Yield (NWPZ)",
-    "z_Acute_Yield" = "Acute Stress Yield (PZ)",
-    "z_Stability"   = "GGE Stability (-|PC2|)",
-    "z_TSI"         = "Tiller Stability (TSI)",
-    "z_TKW"         = "Kernel Weight (TKW)",
-    "z_TCE"         = "Conversion Eff. (TCE)",
-    "z_AUTPC_norm"  = "Vegetative Vigor (AUTPC)"
+  gge_pal_a <- c(
+    "Top 10 Broad Yield-Stability Ideotypes" = "#0072B2",
+    "Top 10 NWPZ Zone Specialists"           = "#D55E00",
+    "Top 10 PZ Zone Specialists"             = "#009E73",
+    "Polygon Vertex (Extreme GxE Profile)"   = "#CC79A7",
+    "Other Panel Genotypes (n = 200)"        = "grey72"
   )
 
-  ideo_heat_long <- ideo_subset %>%
+  # Place environment vector labels at clean outward anchor positions outside the dense central genotype cloud
+  gge_env_label_df <- gge_env_plot_df %>%
     mutate(
-      Geno_Label = sprintf("#%d %s%s", Filtering_Rank, Genotype, ifelse(!grepl("^EDPIE_", Genotype), " [Check/Cultivar]", ""))
-    ) %>%
-    select(Filtering_Rank, Genotype, Geno_Label, Line_Category, all_of(z_cols)) %>%
-    pivot_longer(cols = all_of(z_cols), names_to = "Metric", values_to = "Z_Score") %>%
-    mutate(
-      Geno_Factor   = factor(Geno_Label, levels = rev(unique(Geno_Label))),
-      Metric_Factor = factor(z_labels[Metric], levels = z_labels)
+      Lab_X = case_when(
+        Env == "NWPZ Baseline" ~ PC1 + 0.075,
+        Env == "NWPZ Warm"     ~ PC1 + 0.105,
+        Env == "PZ Warm I"     ~ PC1 - 0.015,
+        Env == "PZ Warm II"    ~ PC1 - 0.080
+      ),
+      Lab_Y = case_when(
+        Env == "NWPZ Baseline" ~ PC2 + 0.045,
+        Env == "NWPZ Warm"     ~ PC2 + 0.028,
+        Env == "PZ Warm I"     ~ PC2 - 0.068,
+        Env == "PZ Warm II"    ~ PC2 + 0.058
+      )
     )
 
-  p_ideo_heat <- ggplot(ideo_heat_long, aes(x = Metric_Factor, y = Geno_Factor, fill = Z_Score)) +
-    geom_tile(color = "white", linewidth = 0.7) +
-    geom_text(aes(label = sprintf("%+.2f", Z_Score)), fontface = "bold", size = 3.0,
-              color = ifelse(abs(ideo_heat_long$Z_Score) > 1.4, "white", "black")) +
-    scale_fill_gradient2(low = "#4575b4", mid = "#f7f7f7", high = "#d73027", midpoint = 0, name = "Std. Z-Score:") +
+  gge_gen_label_df <- gge_gen_plot_df %>%
+    filter(!is.na(Label_PanelA)) %>%
+    mutate(
+      nudge_x_val = case_when(
+        Genotype == "DBW296"     ~ -0.055,
+        Genotype == "PBW826"     ~  0.045,
+        Genotype == "EDPIE_9600" ~  0.045,
+        Genotype == "ADT_150"    ~ -0.045,
+        Genotype == "ADT_159"    ~ -0.055,
+        Genotype == "DBW327"     ~  0.055,
+        TRUE ~ 0
+      ),
+      nudge_y_val = case_when(
+        Genotype == "DBW296"     ~ -0.068,
+        Genotype == "PBW826"     ~ -0.040,
+        Genotype == "EDPIE_9600" ~  0.040,
+        Genotype == "ADT_150"    ~  0.035,
+        Genotype == "ADT_159"    ~  0.045,
+        Genotype == "DBW327"     ~ -0.038,
+        TRUE ~ 0
+      )
+    )
+
+  fig_gge_mega <- ggplot(gge_gen_plot_df, aes(x = GGE_PC1_Score, y = GGE_PC2_Score)) +
+    geom_hline(yintercept = 0, linetype = "dotted", color = "grey65", linewidth = 0.5) +
+    geom_vline(xintercept = 0, linetype = "dotted", color = "grey65", linewidth = 0.5) +
+    geom_polygon(data = hull_df, aes(x = GGE_PC1_Score, y = GGE_PC2_Score),
+                 fill = "#f0f4f8", color = "grey45", linetype = "dashed", linewidth = 0.65, alpha = 0.45, inherit.aes = FALSE) +
+    geom_segment(data = perp_rays_df, aes(x = x0, y = y0, xend = x1, yend = y1),
+                 color = "grey50", linetype = "dotdash", linewidth = 0.55, inherit.aes = FALSE) +
+    geom_point(data = filter(gge_gen_plot_df, Adaptation_Group == "Other Panel Genotypes (n = 200)"),
+               aes(color = Adaptation_Group), size = 2.1, alpha = 0.55) +
+    geom_point(data = filter(gge_gen_plot_df, Adaptation_Group != "Other Panel Genotypes (n = 200)"),
+               aes(color = Adaptation_Group, shape = Is_Vertex), size = 3.4, alpha = 0.92) +
+    geom_segment(data = gge_env_plot_df, aes(x = 0, y = 0, xend = PC1, yend = PC2),
+                 arrow = arrow(length = unit(0.28, "cm"), type = "closed"),
+                 color = "#8B0000", linewidth = 1.15, inherit.aes = FALSE) +
+    geom_segment(data = gge_env_label_df, aes(x = PC1, y = PC2, xend = Lab_X, yend = Lab_Y),
+                 color = "#8B0000", linetype = "solid", linewidth = 0.5, inherit.aes = FALSE) +
+    geom_label(
+      data = gge_env_label_df,
+      aes(x = Lab_X, y = Lab_Y, label = Env),
+      inherit.aes = FALSE, color = "#8B0000", fill = "#FFF8F6", fontface = "bold", size = 3.45,
+      label.size = 0.45, label.padding = unit(0.20, "lines")
+    ) +
+    ggrepel::geom_text_repel(
+      data = gge_gen_label_df,
+      aes(label = Label_PanelA, color = Adaptation_Group),
+      nudge_x = gge_gen_label_df$nudge_x_val,
+      nudge_y = gge_gen_label_df$nudge_y_val,
+      fontface = "bold", size = 3.25, bg.color = "white", bg.r = 0.16,
+      box.padding = 0.55, point.padding = 0.35, force = 8.0, force_pull = 0.5,
+      max.overlaps = Inf, min.segment.length = 0.04, seed = 42, show.legend = FALSE
+    ) +
+    scale_color_manual(values = gge_pal_a, name = "Genotype Adaptation Group:") +
+    scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 17), guide = "none") +
+    scale_x_continuous(expand = expansion(mult = c(0.15, 0.18))) +
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.16))) +
     pub_theme +
     theme(
-      axis.text.x = element_text(angle = 22, hjust = 1, face = "bold"),
-      axis.text.y = element_text(face = "bold", size = 9.5)
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold", size = 10.2),
+      legend.text = element_text(size = 9.5),
+      plot.title = element_text(face = "bold", size = 13.2, hjust = 0),
+      plot.subtitle = element_text(size = 9.8, color = "grey20", lineheight = 1.12, hjust = 0),
+      plot.margin = margin(10, 14, 8, 12)
+    ) +
+    guides(color = guide_legend(nrow = 2, byrow = TRUE, title.position = "top", override.aes = list(size = 3.8, alpha = 1))) +
+    labs(
+      title = "A. Mega-Environment Delineation (Which-Won-Where Polygon View)",
+      subtitle = sprintf("Environment-centered GGE biplot (PC1 + PC2 = %.1f%% of G + GxE variance); rays partition NWPZ vs. PZ.",
+                         sum(var_expl_pc[1:2])),
+      x = sprintf("GGE PC1 (%.1f%% of G + GxE Variance)", var_expl_pc[1]),
+      y = sprintf("GGE PC2 (%.1f%% of G + GxE Variance)", var_expl_pc[2])
+    )
+
+  # Panel B: Average Environment Coordination (AEC) Mean Performance vs. Stability View
+  # Compute perpendicular drop-line coordinates onto the AEC Abscissa (a_u) for Top 10 Ideotypes + Key Checks
+  aec_highlight_df <- filtering_matrix %>%
+    filter(Ideotype_Rank <= 10 | Genotype %in% c("PBW826", "MACS6222", "HS680", "DBW296", "ADT_150")) %>%
+    mutate(
+      Is_Key_Check = Genotype %in% key_checks_vec,
+      Proj_X = GGE_AEC_Projection * a_u[1],
+      Proj_Y = GGE_AEC_Projection * a_u[2],
+      Short_Label = sprintf("#%d %s%s", Ideotype_Rank, Genotype, ifelse(Is_Key_Check, " ★", ""))
+    )
+
+  aec_line_len <- max_g_rad * 1.15
+  aec_axis_df <- data.frame(
+    x0 = -aec_line_len * a_u[1], y0 = -aec_line_len * a_u[2],
+    x1 =  aec_line_len * a_u[1], y1 =  aec_line_len * a_u[2]
+  )
+  aec_orth_df <- data.frame(
+    x0 = -aec_line_len * 0.85 * o_u[1], y0 = -aec_line_len * 0.85 * o_u[2],
+    x1 =  aec_line_len * 0.85 * o_u[1], y1 =  aec_line_len * 0.85 * o_u[2]
+  )
+  aec_mean_env_pt <- data.frame(
+    PC1 = mean(gge_env_plot_df$PC1),
+    PC2 = mean(gge_env_plot_df$PC2)
+  )
+
+  fig_gge_stab <- ggplot(filtering_matrix, aes(x = GGE_PC1_Score, y = GGE_PC2_Score)) +
+    geom_hline(yintercept = 0, linetype = "dotted", color = "grey70", linewidth = 0.45) +
+    geom_vline(xintercept = 0, linetype = "dotted", color = "grey70", linewidth = 0.45) +
+    # AEC Ordinate (perpendicular axis through origin: instability direction)
+    geom_segment(data = aec_orth_df, aes(x = x0, y = y0, xend = x1, yend = y1),
+                 color = "grey45", linetype = "dashed", linewidth = 0.7, inherit.aes = FALSE) +
+    # AEC Abscissa (mean yield direction with arrow)
+    geom_segment(data = aec_axis_df, aes(x = x0, y = y0, xend = x1, yend = y1),
+                 arrow = arrow(length = unit(0.32, "cm"), type = "closed"),
+                 color = "#1B4F72", linewidth = 1.25, inherit.aes = FALSE) +
+    # Perpendicular drop-lines from highlighted genotypes onto AEC Abscissa (visualizing |Orth| stability penalty)
+    geom_segment(data = aec_highlight_df,
+                 aes(x = GGE_PC1_Score, y = GGE_PC2_Score, xend = Proj_X, yend = Proj_Y),
+                 color = "#1B4F72", linetype = "dotted", linewidth = 0.65, alpha = 0.85, inherit.aes = FALSE) +
+    # All 200 genotypes colored by Composite Ideotype Index (Z)
+    geom_point(aes(fill = Composite_Ideotype_Z), shape = 21, color = "grey30", size = 2.5, alpha = 0.80, stroke = 0.3) +
+    # Highlight Top 10 + Key Checks with bold black rings
+    geom_point(data = aec_highlight_df, aes(fill = Composite_Ideotype_Z),
+               shape = 21, color = "black", size = 3.8, stroke = 1.0) +
+    # Average Environment target ring on the AEC axis
+    geom_point(data = aec_mean_env_pt, aes(x = PC1, y = PC2),
+               shape = 10, size = 5.2, color = "#8B0000", stroke = 1.3, inherit.aes = FALSE) +
+    ggrepel::geom_label_repel(
+      data = aec_highlight_df,
+      aes(x = GGE_PC1_Score, y = GGE_PC2_Score, label = Short_Label),
+      inherit.aes = FALSE, color = "grey10", fill = "white", fontface = "bold", size = 3.00,
+      label.size = 0.28, box.padding = 0.52, point.padding = 0.32, force = 7.5, max.overlaps = Inf,
+      min.segment.length = 0.04, seed = 123
+    ) +
+    annotate("label", x = aec_axis_df$x1 * 0.96, y = aec_axis_df$y1 * 0.96 - 0.052,
+             label = "AEC Abscissa\n(Higher Mean Yield \u2192)", color = "#1B4F72", fill = "#EBF5FB",
+             fontface = "bold", size = 3.10, label.size = 0.3) +
+    scale_fill_gradient2(low = "#4575b4", mid = "#ffffbf", high = "#d73027", midpoint = 0,
+                         name = "Composite Ideotype Index (Z):") +
+    scale_x_continuous(expand = expansion(mult = c(0.15, 0.18))) +
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.16))) +
+    pub_theme +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold", size = 10.2),
+      legend.text = element_text(size = 9.5),
+      legend.key.width = unit(1.5, "cm"),
+      plot.title = element_text(face = "bold", size = 13.2, hjust = 0),
+      plot.subtitle = element_text(size = 9.8, color = "grey20", lineheight = 1.12, hjust = 0),
+      plot.margin = margin(10, 14, 8, 12)
     ) +
     labs(
-      title = "A. Multi-Trait Standardized Ideotype Matrix (Top Selected Genotypes & Reference Cultivars)",
-      subtitle = "Values denote population-standardized Z-scores (N = 200) across yield, GGE stability, tiller survival (TSI), kernel weight (TKW), and canopy vigor",
-      x = "",
-      y = "Rank & Genotype Identifier"
+      title = "B. Average Environment Coordination (AEC): Mean Yield vs. Stability",
+      subtitle = "Blue arrow = AEC Abscissa (directional 4-env mean yield); dotted drop-lines show orthogonal instability penalties (|Orth|).",
+      x = sprintf("GGE PC1 (%.1f%% of G + GxE Variance)", var_expl_pc[1]),
+      y = sprintf("GGE PC2 (%.1f%% of G + GxE Variance)", var_expl_pc[2])
     )
 
-  top5_long <- ideo_pop %>%
-    filter(Filtering_Rank <= 5) %>%
-    select(Genotype, Filtering_Rank, all_of(z_cols)) %>%
-    pivot_longer(cols = all_of(z_cols), names_to = "Metric", values_to = "Z_Score") %>%
+  composite_gge <- (fig_gge_mega | fig_gge_stab) +
+    plot_annotation(
+      caption = "Note: Environment vectors in Panel A are uniformly scaled to the genotype hull radius to optimize visual legibility while preserving exact vector angles, cosine correlations, and directional projections. ★ denotes popular released varieties."
+    ) &
+    theme(plot.caption = element_text(size = 9.6, color = "grey25", hjust = 0, face = "italic", margin = margin(t = 6)))
+
+  ggsave(file.path(sec27_dir, "Figure_S6_GGE_Composite.png"), plot = composite_gge, width = 16.5, height = 7.8, dpi = 600)
+
+  # ============================================================================
+  # 9.2 ZONE-SPECIFIC VS. BROAD ADAPTATION SYNTHESIS TABLE & REDESIGNED FIGURE 8
+  # ============================================================================
+  # Compute cross-environment SE of grain yield for each genotype (n = 4 environments)
+  yld_se_4env <- apply(yld_mat, 1, function(x) sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x))))
+
+  ideo_pop_v2 <- filtering_matrix %>%
     mutate(
-      Metric_Factor = factor(z_labels[Metric], levels = z_labels),
-      Profile_Group = sprintf("#%d %s", Filtering_Rank, Genotype)
+      SE_Yield_4Env = yld_se_4env[Genotype],
+      Is_Named_Cultivar = !grepl("^(EDPIE|ADT)_", Genotype),
+      TSI_Label_Clean = ifelse(TSI_Class == "Stable", "High TSI (TSI \u2265 1.0)", "Low TSI (TSI < 1.0)"),
+      Short_Strategy_Readable = paste(
+        ifelse(grepl("^Early", Trajectory_Baseline), "Early Peak", "Late Peak"),
+        ifelse(Vigor_Baseline == VIGOR_HI, "High Vigor", "Low Vigor"),
+        sep = " \u00b7 "
+      ),
+      Line_Category = case_when(
+        Ideotype_Rank <= 10 ~ "Top 10 Yield-Stability Ideotypes",
+        Is_Named_Cultivar ~ "Popular Released Variety",
+        TRUE ~ "Other Breeding Lines"
+      ),
+      Adaptation_Class = case_when(
+        NWPZ_Zone_Rank <= 15 & PZ_Zone_Rank <= 15 ~ "Trans-Zonal Top-15 Bridge (ADT_159)",
+        Ideotype_Rank <= 10 ~ "Top 10 Global Broad Ideotypes",
+        NWPZ_Zone_Rank <= 15 ~ "Top 15 NWPZ Zone Specialists",
+        PZ_Zone_Rank <= 15 ~ "Top 15 PZ Zone Specialists",
+        Is_Named_Cultivar & Ideotype_Rank <= 25 ~ "Popular Released Varieties",
+        TRUE ~ "Background Panel (n = 200)"
+      )
     )
 
-  check_mean_long <- ideo_pop %>%
-    filter(!grepl("^EDPIE_", Genotype)) %>%
-    summarise(across(all_of(z_cols), ~ mean(.x, na.rm = TRUE))) %>%
-    pivot_longer(cols = everything(), names_to = "Metric", values_to = "Z_Score") %>%
+  # Select Top 10 Global Ideotypes + Top 6 Popular Released Varieties
+  top10_ideo <- ideo_pop_v2 %>% filter(Ideotype_Rank <= 10)
+  extra_checks <- ideo_pop_v2 %>% filter(Ideotype_Rank > 10, Is_Named_Cultivar) %>% slice_head(n = 6)
+  ideo_subset_v2 <- bind_rows(top10_ideo, extra_checks) %>% arrange(Ideotype_Rank)
+
+  write.csv(ideo_subset_v2, file.path(sec27_dir, "Table_Top10_vs_Checks_Ideotype_Summary_v2.csv"), row.names = FALSE)
+
+  # Create Table_Zone_Specific_vs_Broad_Adaptation_Synthesis.csv contrasting Top 15 NWPZ vs Top 15 PZ vs Top 10 Global
+  top15_nwpz <- ideo_pop_v2 %>% filter(NWPZ_Zone_Rank <= 15) %>% arrange(NWPZ_Zone_Rank)
+  top15_pz   <- ideo_pop_v2 %>% filter(PZ_Zone_Rank <= 15) %>% arrange(PZ_Zone_Rank)
+  top5_checks <- ideo_pop_v2 %>% filter(Is_Named_Cultivar) %>% arrange(Ideotype_Rank) %>% slice_head(n = 5)
+
+  zone_synthesis_table <- bind_rows(
+    top15_nwpz %>% mutate(Selection_Target_Group = "1. NWPZ Zone Top 15 Specialists (Cooler / Longer Season)", Group_Rank = NWPZ_Zone_Rank),
+    top15_pz   %>% mutate(Selection_Target_Group = "2. PZ Zone Top 15 Specialists (Chronic Peninsular Heat)", Group_Rank = PZ_Zone_Rank),
+    top10_ideo %>% mutate(Selection_Target_Group = "3. Global 4-Env Top 10 Broad Ideotypes (Trans-Zonal)", Group_Rank = Ideotype_Rank),
+    top5_checks %>% mutate(Selection_Target_Group = "4. Popular Released Varieties (Top 5 Benchmark)", Group_Rank = row_number())
+  ) %>%
+    select(
+      Selection_Target_Group, Group_Rank, Genotype, Is_Named_Cultivar,
+      Ideotype_Rank, NWPZ_Zone_Rank, PZ_Zone_Rank,
+      Master_Profile, Trajectory_Baseline, Vigor_Baseline, TSI_Class,
+      Mean_Yield_4Env_BLUE, Yield_NWPZ_Baseline, Yield_NWPZ_Warm, Yield_PZ_Warm_I, Yield_PZ_Warm_II,
+      TSI_Global, Mean_TCE_4Env, Mean_AUTPC_norm_4Env, Composite_Ideotype_Z, NWPZ_Zone_Ideotype_Z, PZ_Zone_Ideotype_Z
+    )
+
+  write.csv(zone_synthesis_table, file.path(sec27_dir, "Table_Zone_Specific_vs_Broad_Adaptation_Synthesis.csv"), row.names = FALSE)
+
+  if (requireNamespace("openxlsx", quietly = TRUE)) {
+    wb_s27 <- openxlsx::createWorkbook()
+    checks_all_named <- ideo_pop_v2 %>% filter(Is_Named_Cultivar) %>% arrange(Ideotype_Rank)
+    for (sh27 in list(
+      list(name = "Table_8_Top10_and_Checks", data = ideo_subset_v2),
+      list(name = "Table_8B_Zone_vs_Broad_Synth", data = zone_synthesis_table),
+      list(name = "Table_S16A_All_200_Ideotypes", data = ideo_pop_v2),
+      list(name = "Table_S16B_Named_Cultivars", data = checks_all_named),
+      list(name = "Table_S16C_NWPZ_Zone_Rank", data = nwpz_zone_table),
+      list(name = "Table_S16D_PZ_Zone_Rank", data = pz_zone_table)
+    )) {
+      openxlsx::addWorksheet(wb_s27, sh27$name)
+      openxlsx::writeDataTable(wb_s27, sh27$name, sh27$data, withFilter = TRUE)
+      openxlsx::freezePane(wb_s27, sh27$name, firstRow = TRUE)
+      openxlsx::setColWidths(wb_s27, sh27$name, cols = seq_len(ncol(sh27$data)), widths = "auto")
+    }
+    openxlsx::saveWorkbook(wb_s27, file.path(sec27_dir, "Table_8_MAIN_TEXT_and_Table_S16_SUPPLEMENTARY_Ideotype_Selection.xlsx"), overwrite = TRUE)
+  }
+
+  # ============================================================================
+  # 9.3 REDESIGNED 3-PANEL PUBLICATION FIGURE: Figure_Top_Genotypes_Ideotype_Profiles_v2.png
+  # ============================================================================
+  # Panel A (Top-Left): Decluttered Trans-Zonal Adaptation Map (NWPZ vs. PZ Selection Indices)
+  zone_map_df <- ideo_pop_v2 %>%
     mutate(
-      Metric_Factor = factor(z_labels[Metric], levels = z_labels),
-      Profile_Group = "Named Cultivars Mean"
+      Zone_Highlight = case_when(
+        NWPZ_Zone_Rank <= 15 & PZ_Zone_Rank <= 15 ~ "Trans-Zonal Bridge (ADT_159)",
+        Ideotype_Rank <= 10 ~ "Top 10 Global Broad Ideotypes",
+        NWPZ_Zone_Rank <= 15 ~ "Top 15 NWPZ Specialists (87% Low TSI)",
+        PZ_Zone_Rank <= 15 ~ "Top 15 PZ Specialists (100% High TSI)",
+        TRUE ~ "Other Panel Genotypes"
+      ),
+      Zone_Highlight = factor(Zone_Highlight, levels = c(
+        "Trans-Zonal Bridge (ADT_159)",
+        "Top 10 Global Broad Ideotypes",
+        "Top 15 NWPZ Specialists (87% Low TSI)",
+        "Top 15 PZ Specialists (100% High TSI)",
+        "Other Panel Genotypes"
+      )),
+      # KISS: Only 6 focal non-overlapping halo text labels so the data points shine!
+      Map_Label = case_when(
+        Genotype == "ADT_159"    ~ "ADT_159 (#3 Global | Dual-Zone Bridge)",
+        Genotype == "EDPIE_9505" ~ "#1 Global: EDPIE_9505",
+        Genotype == "DBW327"     ~ "#2 Global: DBW327 ★",
+        Genotype == "EDPIE_9600" ~ "#3 NWPZ: EDPIE_9600",
+        Genotype == "DBW296"     ~ "#1 NWPZ: DBW296 ★",
+        Genotype == "ADT_150"    ~ "#1 PZ: ADT_150",
+        TRUE ~ NA_character_
+      ),
+      map_nudge_x = case_when(
+        Genotype == "EDPIE_9505" ~  0.55,
+        Genotype == "ADT_159"    ~  0.42,
+        Genotype == "DBW327"     ~ -0.45,
+        Genotype == "ADT_150"    ~ -0.58,
+        Genotype == "EDPIE_9600" ~ -0.35,
+        Genotype == "DBW296"     ~  0.32,
+        TRUE ~ 0
+      ),
+      map_nudge_y = case_when(
+        Genotype == "EDPIE_9505" ~  0.08,
+        Genotype == "ADT_159"    ~  0.32,
+        Genotype == "DBW327"     ~ -0.26,
+        Genotype == "ADT_150"    ~  0.22,
+        Genotype == "EDPIE_9600" ~  0.18,
+        Genotype == "DBW296"     ~ -0.25,
+        TRUE ~ 0
+      )
     )
 
-  para_df <- bind_rows(top5_long, check_mean_long) %>%
-    mutate(Profile_Group = factor(Profile_Group, levels = c(unique(top5_long$Profile_Group), "Named Cultivars Mean")))
+  zone_pal <- c(
+    "Trans-Zonal Bridge (ADT_159)"          = "#D95F02",
+    "Top 10 Global Broad Ideotypes"         = "#0072B2",
+    "Top 15 NWPZ Specialists (87% Low TSI)" = "#E69F00",
+    "Top 15 PZ Specialists (100% High TSI)" = "#009E73",
+    "Other Panel Genotypes"                 = "grey75"
+  )
 
-  p_ideo_para <- ggplot(para_df, aes(x = Metric_Factor, y = Z_Score, color = Profile_Group, group = Profile_Group)) +
+  zone_map_label_df <- filter(zone_map_df, !is.na(Map_Label))
+
+  p_fig8_a <- ggplot(zone_map_df, aes(x = NWPZ_Zone_Ideotype_Z, y = PZ_Zone_Ideotype_Z)) +
+    annotate("rect", xmin = 0, xmax = Inf, ymin = 0, ymax = Inf, fill = "#EBF5FB", alpha = 0.35) +
+    annotate("rect", xmin = 0, xmax = Inf, ymin = -Inf, ymax = 0, fill = "#FEF9E7", alpha = 0.32) +
+    annotate("rect", xmin = -Inf, xmax = 0, ymin = 0, ymax = Inf, fill = "#E8F8F5", alpha = 0.32) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "grey45", linewidth = 0.6) +
-    geom_line(aes(linewidth = Profile_Group == "Named Cultivars Mean", linetype = Profile_Group == "Named Cultivars Mean")) +
-    geom_point(size = 3.0) +
-    scale_linewidth_manual(values = c("FALSE" = 1.05, "TRUE" = 1.4), guide = "none") +
-    scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "twodash"), guide = "none") +
-    scale_color_manual(values = c(
-      setNames(c("#E64B35", "#3C5488", "#00A087", "#F39B7F", "#8491B4"), unique(top5_long$Profile_Group)),
-      "Named Cultivars Mean" = "black"
-    )) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey45", linewidth = 0.6) +
+    geom_point(data = filter(zone_map_df, Zone_Highlight == "Other Panel Genotypes"),
+               aes(color = Zone_Highlight, shape = TSI_Class), size = 2.2, alpha = 0.55) +
+    geom_point(data = filter(zone_map_df, Zone_Highlight != "Other Panel Genotypes"),
+               aes(color = Zone_Highlight, shape = TSI_Class), size = 3.6, alpha = 0.95) +
+    ggrepel::geom_text_repel(
+      data = zone_map_label_df,
+      aes(label = Map_Label, color = Zone_Highlight),
+      nudge_x = zone_map_label_df$map_nudge_x,
+      nudge_y = zone_map_label_df$map_nudge_y,
+      fontface = "bold", size = 3.25, bg.color = "white", bg.r = 0.16,
+      box.padding = 0.55, point.padding = 0.35, force = 7.5, max.overlaps = Inf,
+      ylim = c(-1.85, 1.95), min.segment.length = 0.04,
+      seed = 42, show.legend = FALSE
+    ) +
+    annotate("text", x = -2.42, y = 2.34, label = "PZ Heat Specialists (15/15 High TSI \u2265 1.0)",
+             hjust = 0, vjust = 1, fontface = "bold", size = 3.25, color = "#006d50") +
+    annotate("text", x = 2.14, y = -2.30, label = "NWPZ Specialists (13/15 Low TSI < 1.0)",
+             hjust = 1, vjust = 0, fontface = "bold", size = 3.25, color = "#995c00") +
+    annotate("text", x = 2.14, y = 2.34, label = "Broad Dual-Zone Adaptation (1/15 Overlap: ADT_159)",
+             hjust = 1, vjust = 1, fontface = "bold", size = 3.25, color = "#004c7a") +
+    scale_color_manual(values = zone_pal, name = "Adaptation Group:") +
+    scale_shape_manual(values = c("Stable" = 17, "Contrasting" = 16),
+                       labels = c("Stable" = "High TSI (TSI \u2265 1.0)", "Contrasting" = "Low TSI (TSI < 1.0)"),
+                       name = "TSI Class:") +
+    scale_x_continuous(limits = c(-2.50, 2.22), breaks = seq(-2, 2, by = 1), expand = expansion(mult = c(0.02, 0.02))) +
+    scale_y_continuous(limits = c(-2.40, 2.45), breaks = seq(-2, 2, by = 1), expand = expansion(mult = c(0.02, 0.02))) +
     pub_theme +
-    theme(axis.text.x = element_text(angle = 22, hjust = 1, face = "bold")) +
+    theme(
+      axis.title.x = element_text(face = "bold", size = 10.6),
+      axis.title.y = element_text(face = "bold", size = 10.6),
+      legend.position = "bottom",
+      legend.box = "vertical",
+      legend.spacing.y = unit(0.08, "cm"),
+      legend.title = element_text(face = "bold", size = 9.5),
+      legend.text = element_text(size = 8.8),
+      plot.title = element_text(face = "bold", size = 12.6, hjust = 0),
+      plot.subtitle = element_text(size = 9.2, color = "grey20", hjust = 0),
+      plot.margin = margin(8, 10, 6, 10)
+    ) +
+    guides(
+      color = guide_legend(nrow = 2, byrow = TRUE, title.position = "top", order = 1, override.aes = list(size = 3.5)),
+      shape = guide_legend(nrow = 1, order = 2, override.aes = list(size = 3.5))
+    ) +
     labs(
-      title = "B. Multi-Trait Ideotype Coordinate Profiles: Top 5 Selected Lines vs. Named Cultivars Mean",
-      subtitle = "Dashed horizontal line = population mean (Z = 0.0); Top 5 selected candidates combine superior yield stability with positive TSI, TKW, or TCE",
-      x = "Agronomic & Physiological Selection Dimension",
-      y = "Standardized Z-Score (SD Units)",
-      color = "Genotype / Benchmark:"
+      title = "A. Trans-Zonal Adaptation Trade-Off: NWPZ vs. PZ Selection Indices",
+      subtitle = "Top 15 NWPZ vs. Top 15 PZ share only 1 line (ADT_159): NWPZ favors Low TSI (< 1.0), PZ requires High TSI (\u2265 1.0).",
+      x = "NWPZ Selection Index (Z-Score: NWPZ Baseline & Warm)",
+      y = "PZ Selection Index (Z-Score: PZ Warm I & II)"
     )
 
-  p_ideo_comp <- (p_ideo_heat / p_ideo_para) + plot_layout(heights = c(1.35, 1.0))
-  ggsave(file.path(sec27_dir, "Figure_Top_Genotypes_Ideotype_Profiles.png"),
-         plot = p_ideo_comp, width = 13.5, height = 11.5, dpi = 600)
+  # Panel B (Top-Right): Simplified Single-Metric Horizontal Lollipop/Bar Ranking (KISS: 2 colors only!)
+  top5_checks_mean_yld <- mean(top5_checks$Mean_Yield_4Env_BLUE, na.rm = TRUE)
+  pop_mean_yld_4env    <- mean(ideo_pop_v2$Mean_Yield_4Env_BLUE, na.rm = TRUE)
+
+  fig8_b_df <- ideo_subset_v2 %>%
+    mutate(
+      Clean_Y_Label  = sprintf("#%d %s%s", Ideotype_Rank, Genotype, ifelse(Is_Named_Cultivar, " ★", "")),
+      Clean_Y_Factor = factor(Clean_Y_Label, levels = rev(Clean_Y_Label)),
+      Right_Badge    = sprintf("Z = %+.2f  (%s)", Composite_Ideotype_Z, Short_Strategy_Readable)
+    )
+
+  tsi_pal_b <- c(
+    "High TSI (TSI \u2265 1.0)" = "#009E73",
+    "Low TSI (TSI < 1.0)"  = "#D55E00"
+  )
+
+  ref_lines_b_df <- data.frame(
+    xint = c(top5_checks_mean_yld, pop_mean_yld_4env),
+    Ref_Type = factor(
+      c(sprintf("Popular Released Varieties Mean (%.3f)", top5_checks_mean_yld),
+        sprintf("Panel Mean (n = 200: %.3f)", pop_mean_yld_4env)),
+      levels = c(sprintf("Popular Released Varieties Mean (%.3f)", top5_checks_mean_yld),
+                 sprintf("Panel Mean (n = 200: %.3f)", pop_mean_yld_4env))
+    )
+  )
+
+  p_fig8_b <- ggplot(fig8_b_df, aes(y = Clean_Y_Factor, x = Mean_Yield_4Env_BLUE, color = TSI_Label_Clean)) +
+    geom_vline(data = ref_lines_b_df, aes(xintercept = xint, linetype = Ref_Type),
+               color = "grey20", linewidth = 0.75) +
+    # Horizontal lollipop stem from 0.50 baseline to genotype mean yield
+    geom_segment(aes(x = 0.50, xend = Mean_Yield_4Env_BLUE, yend = Clean_Y_Factor),
+                 linewidth = 2.4, alpha = 0.32, show.legend = FALSE) +
+    # Cross-environment SE whiskers (± 1 SE across the 4 regimes)
+    geom_errorbarh(aes(xmin = Mean_Yield_4Env_BLUE - SE_Yield_4Env,
+                       xmax = Mean_Yield_4Env_BLUE + SE_Yield_4Env),
+                   height = 0.28, linewidth = 0.75, color = "grey25", show.legend = FALSE) +
+    # Single clean point per genotype for 4-Environment Mean Yield
+    geom_point(size = 3.8, alpha = 0.98) +
+    # Single dark-grey text annotation on the right showing Composite Z & Phenology/Vigor profile
+    geom_text(aes(x = 0.965, label = Right_Badge),
+              hjust = 0, color = "grey15", fontface = "bold", size = 3.05, show.legend = FALSE) +
+    scale_color_manual(values = tsi_pal_b, name = "Productive-Tiller Stability Index (TSI):") +
+    scale_linetype_manual(
+      values = setNames(c("dashed", "dotted"), levels(ref_lines_b_df$Ref_Type)),
+      name = "Benchmark Reference:"
+    ) +
+    scale_x_continuous(limits = c(0.50, 1.24), breaks = seq(0.5, 0.9, by = 0.1), expand = expansion(mult = c(0.01, 0.02))) +
+    pub_theme +
+    theme(
+      axis.text.y = element_text(face = "bold", size = 9.8, color = "grey10"),
+      axis.title.x = element_text(face = "bold", size = 10.6),
+      axis.title.y = element_text(face = "bold", size = 10.6),
+      legend.position = "bottom",
+      legend.box = "vertical",
+      legend.spacing.y = unit(0.08, "cm"),
+      legend.title = element_text(face = "bold", size = 9.5),
+      legend.text = element_text(size = 9.0),
+      plot.title = element_text(face = "bold", size = 12.6, hjust = 0),
+      plot.subtitle = element_text(size = 9.2, color = "grey20", hjust = 0),
+      plot.margin = margin(8, 12, 6, 8)
+    ) +
+    guides(
+      color = guide_legend(nrow = 1, order = 1, override.aes = list(size = 4.0, linetype = "blank")),
+      linetype = guide_legend(nrow = 1, order = 2, override.aes = list(color = "grey15", linewidth = 0.85))
+    ) +
+    labs(
+      title = "B. Multi-Environment Yield & Selection Index Ranking (★ = Popular Released Variety)",
+      subtitle = "4-environment mean grain yield (\u00b1 SE), colored by TSI class and benchmarked against Popular Released Varieties.",
+      x = sprintf("4-Environment Mean Grain Yield (%s)                  [Selection Index Z & Strategy]", YIELD_UNIT_LABEL),
+      y = "Global Rank & Genotype"
+    )
+
+  # Panel C (Bottom Full Width: C1 Multi-Environment Yield Reaction Norms + C2 Standardized Physiological Profiles)
+  # Benchmark Elite Breeding Lines representing distinct strategies against the Representative Mean (± SE) of Popular Released Varieties (n = 5: DBW327, HD3354, PBW826, MACS6222, HS680)
+  focal_breeding_genos <- c("EDPIE_9505", "EDPIE_9576", "ADT_159", "ADT_150", "EDPIE_9600")
+  benchmark_label <- "Popular Released Varieties (Mean \u00b1 SE, n = 5 ★)"
+  focal_labels <- c(
+    "EDPIE_9505" = "#1 Global: EDPIE_9505 (Early Peak \u00b7 Low Vigor \u00b7 Low TSI | High TCE)",
+    "EDPIE_9576" = "#5 Global: EDPIE_9576 (Late Peak \u00b7 High Vigor \u00b7 Low TSI | High TCE)",
+    "ADT_159"    = "#3 Global / Bridge: ADT_159 (Late Peak \u00b7 Low Vigor \u00b7 High TSI | Dual-Zone)",
+    "ADT_150"    = "#1 PZ Specialist: ADT_150 (Late Peak \u00b7 Low Vigor \u00b7 High TSI | PZ Heat)",
+    "EDPIE_9600" = "#3 NWPZ Specialist: EDPIE_9600 (Early Peak \u00b7 High Vigor \u00b7 Low TSI | NWPZ)",
+    "CHECK_MEAN" = benchmark_label
+  )
+  focal_levels <- unname(focal_labels[c(focal_breeding_genos, "CHECK_MEAN")])
+
+  focal_pal <- setNames(
+    c("#D55E00", "#E69F00", "#0072B2", "#009E73", "#CC79A7", "#111111"),
+    focal_levels
+  )
+  focal_lty <- setNames(
+    c("solid", "solid", "solid", "solid", "dotdash", "22"),
+    focal_levels
+  )
+  focal_lwd <- setNames(
+    c(1.15, 1.15, 1.25, 1.15, 1.10, 1.55),
+    focal_levels
+  )
+
+  env_order_levels <- c(
+    "NWPZ Baseline",
+    "NWPZ Warm",
+    "PZ Warm I",
+    "PZ Warm II"
+  )
+
+  # C1: Multi-Regime Yield Reaction Norms (5 Elite Breeding Lines vs. Popular Released Varieties Mean ± SE)
+  c1_breeding_df <- ideo_pop_v2 %>%
+    filter(Genotype %in% focal_breeding_genos) %>%
+    select(Genotype, Yield_NWPZ_Baseline, Yield_NWPZ_Warm, Yield_PZ_Warm_I, Yield_PZ_Warm_II) %>%
+    pivot_longer(
+      cols = c(Yield_NWPZ_Baseline, Yield_NWPZ_Warm, Yield_PZ_Warm_I, Yield_PZ_Warm_II),
+      names_to = "Env_Col", values_to = "GrainYld"
+    ) %>%
+    mutate(SE_Yld = NA_real_)
+
+  c1_check_mean_df <- top5_checks %>%
+    select(Genotype, Yield_NWPZ_Baseline, Yield_NWPZ_Warm, Yield_PZ_Warm_I, Yield_PZ_Warm_II) %>%
+    pivot_longer(
+      cols = c(Yield_NWPZ_Baseline, Yield_NWPZ_Warm, Yield_PZ_Warm_I, Yield_PZ_Warm_II),
+      names_to = "Env_Col", values_to = "Val"
+    ) %>%
+    group_by(Env_Col) %>%
+    summarise(
+      Genotype = "CHECK_MEAN",
+      GrainYld = mean(Val, na.rm = TRUE),
+      SE_Yld   = sd(Val, na.rm = TRUE) / sqrt(n()),
+      .groups  = "drop"
+    )
+
+  c1_env_df <- bind_rows(c1_breeding_df, c1_check_mean_df) %>%
+    mutate(
+      Env_Ordered = factor(case_when(
+        Env_Col == "Yield_NWPZ_Baseline" ~ env_order_levels[1],
+        Env_Col == "Yield_NWPZ_Warm"     ~ env_order_levels[2],
+        Env_Col == "Yield_PZ_Warm_I"     ~ env_order_levels[3],
+        Env_Col == "Yield_PZ_Warm_II"    ~ env_order_levels[4]
+      ), levels = env_order_levels),
+      Focal_Group = factor(focal_labels[Genotype], levels = focal_levels)
+    )
+
+  c1_ribbon_df <- c1_env_df %>% filter(Genotype == "CHECK_MEAN")
+
+  p_fig8_c1 <- ggplot(c1_env_df, aes(x = Env_Ordered, y = GrainYld, group = Focal_Group)) +
+    geom_ribbon(
+      data = c1_ribbon_df,
+      aes(x = Env_Ordered, ymin = GrainYld - SE_Yld, ymax = GrainYld + SE_Yld, group = 1),
+      inherit.aes = FALSE, fill = "grey30", alpha = 0.18
+    ) +
+    geom_errorbar(
+      data = c1_ribbon_df,
+      aes(x = Env_Ordered, ymin = GrainYld - SE_Yld, ymax = GrainYld + SE_Yld),
+      inherit.aes = FALSE, width = 0.10, color = "#111111", linewidth = 0.75
+    ) +
+    geom_line(aes(color = Focal_Group, linetype = Focal_Group, linewidth = Focal_Group)) +
+    geom_point(aes(color = Focal_Group), size = 3.2) +
+    scale_color_manual(values = focal_pal, guide = "none") +
+    scale_linetype_manual(values = focal_lty, guide = "none") +
+    scale_linewidth_manual(values = focal_lwd, guide = "none") +
+    scale_x_discrete(expand = expansion(mult = c(0.06, 0.06))) +
+    scale_y_continuous(limits = c(0.42, 1.12), breaks = seq(0.5, 1.1, by = 0.2)) +
+    pub_theme +
+    theme(
+      axis.text.x = element_text(face = "bold", size = 9.6),
+      axis.title.x = element_text(face = "bold", size = 10.6),
+      axis.title.y = element_text(face = "bold", size = 10.6),
+      plot.title = element_text(face = "bold", size = 12.2, hjust = 0),
+      plot.subtitle = element_text(size = 9.2, color = "grey20", hjust = 0),
+      legend.position = "none",
+      plot.margin = margin(6, 10, 4, 10)
+    ) +
+    labs(
+      title = "C1. Multi-Regime Yield Reaction Norms vs. Popular Released Varieties",
+      subtitle = "Shaded grey band & black dashed curve = Popular Released Varieties (Mean \u00b1 SE, n = 5: DBW327, HD3354, PBW826, MACS6222, HS680).",
+      x = "Thermal Regime (Ordered from Coolest NWPZ to Warmest PZ)",
+      y = sprintf("Realized Grain Yield (%s)", YIELD_UNIT_LABEL)
+    )
+
+  # C2: Standardized Physiological & Selection Profile (5 Elite Breeding Lines vs. Popular Released Varieties Mean ± SE)
+  z_cols_clean <- c("Composite_Ideotype_Z", "z_Mean_Yield", "z_Stability", "z_TSI", "z_TCE", "z_AUTPC_norm")
+  z_labels_clean <- c(
+    "Composite_Ideotype_Z" = "Composite\nIndex (Z)",
+    "z_Mean_Yield"         = "4-Env Mean\nYield (Z)",
+    "z_Stability"          = "GGE AEC\nStability (Z)",
+    "z_TSI"                = "Productive-Tiller\nStability (TSI, Z)",
+    "z_TCE"                = "Conversion Eff.\n(TCE, Z)",
+    "z_AUTPC_norm"         = "Vegetative Vigor\n(AUTPC, Z)"
+  )
+
+  c2_breeding_df <- ideo_pop_v2 %>%
+    filter(Genotype %in% focal_breeding_genos) %>%
+    select(Genotype, all_of(z_cols_clean)) %>%
+    pivot_longer(cols = all_of(z_cols_clean), names_to = "Metric", values_to = "Z_Score") %>%
+    mutate(SE_Z = NA_real_)
+
+  c2_check_mean_df <- top5_checks %>%
+    select(Genotype, all_of(z_cols_clean)) %>%
+    pivot_longer(cols = all_of(z_cols_clean), names_to = "Metric", values_to = "Val") %>%
+    group_by(Metric) %>%
+    summarise(
+      Genotype = "CHECK_MEAN",
+      Z_Score  = mean(Val, na.rm = TRUE),
+      SE_Z     = sd(Val, na.rm = TRUE) / sqrt(n()),
+      .groups  = "drop"
+    )
+
+  c2_trait_df <- bind_rows(c2_breeding_df, c2_check_mean_df) %>%
+    mutate(
+      Metric_Factor = factor(z_labels_clean[Metric], levels = unname(z_labels_clean)),
+      Focal_Group   = factor(focal_labels[Genotype], levels = focal_levels)
+    )
+
+  c2_ribbon_df <- c2_trait_df %>% filter(Genotype == "CHECK_MEAN")
+
+  p_fig8_c2 <- ggplot(c2_trait_df, aes(x = Metric_Factor, y = Z_Score, group = Focal_Group)) +
+    geom_hline(yintercept = 0, linetype = "dotted", color = "grey50", linewidth = 0.6) +
+    geom_ribbon(
+      data = c2_ribbon_df,
+      aes(x = Metric_Factor, ymin = Z_Score - SE_Z, ymax = Z_Score + SE_Z, group = 1),
+      inherit.aes = FALSE, fill = "grey30", alpha = 0.18
+    ) +
+    geom_errorbar(
+      data = c2_ribbon_df,
+      aes(x = Metric_Factor, ymin = Z_Score - SE_Z, ymax = Z_Score + SE_Z),
+      inherit.aes = FALSE, width = 0.10, color = "#111111", linewidth = 0.75
+    ) +
+    geom_line(aes(color = Focal_Group, linetype = Focal_Group, linewidth = Focal_Group)) +
+    geom_point(aes(color = Focal_Group), size = 3.2) +
+    scale_color_manual(values = focal_pal, name = "Advanced Breeding Lines (by Strategy) vs. Benchmark:") +
+    scale_linetype_manual(values = focal_lty, name = "Advanced Breeding Lines (by Strategy) vs. Benchmark:") +
+    scale_linewidth_manual(values = focal_lwd, name = "Advanced Breeding Lines (by Strategy) vs. Benchmark:") +
+    scale_x_discrete(expand = expansion(mult = c(0.05, 0.05))) +
+    pub_theme +
+    theme(
+      axis.text.x = element_text(face = "bold", size = 9.5),
+      axis.title.x = element_text(face = "bold", size = 10.6),
+      axis.title.y = element_text(face = "bold", size = 10.6),
+      plot.title = element_text(face = "bold", size = 12.2, hjust = 0),
+      plot.subtitle = element_text(size = 9.2, color = "grey20", hjust = 0),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold", size = 9.8),
+      legend.text = element_text(size = 9.2),
+      plot.margin = margin(6, 10, 4, 8)
+    ) +
+    guides(
+      color = guide_legend(nrow = 3, byrow = TRUE, override.aes = list(size = 3.4)),
+      linetype = guide_legend(nrow = 3, byrow = TRUE),
+      linewidth = guide_legend(nrow = 3, byrow = TRUE)
+    ) +
+    labs(
+      title = "C2. Standardized Physiological & Selection Profiles Across Adaptation Strategies",
+      subtitle = "Physiological equifinality: High Conversion (EDPIE_9505, EDPIE_9576) vs. High Tiller Stability (ADT_159, ADT_150).",
+      x = "Selection Index Components & Diagnostic Tillering Traits",
+      y = "Standardized Z-Score (SD Units)"
+    )
+
+  p_fig8_bottom <- (p_fig8_c1 | p_fig8_c2) + plot_layout(guides = "collect") &
+    theme(legend.position = "bottom", legend.justification = "center")
+
+  p_ideo_comp_v2 <- ((p_fig8_a | p_fig8_b) / p_fig8_bottom) +
+    plot_layout(heights = c(1.15, 0.96))
+
+  ggsave(file.path(sec27_dir, "Figure_Top_Genotypes_Ideotype_Profiles_v2.png"), plot = p_ideo_comp_v2, width = 16.5, height = 12.4, dpi = 600)
 } else {
   cat("  -> Section 9 [SKIPPED - Assets Finalized & Protected]\n")
 }
 
+# ==============================================================================
+# SECTION 10: GWAS PHENOTYPE DATASHEET PACKAGE (GENOTYPE 1 TO 200) & ASSET INDEX
+# ==============================================================================
+cat(">>> Executing Section 10: GWAS Phenotype Datasheets (Plot_ID 1..200) & Master Asset Index...\n")
+
+if (isTRUE(RUN_SECTION_10_GWAS_EXPORT)) {
+  gwas_out_dir <- file.path(project_root, "GWAS_Datasheets")
+  dir.create(gwas_out_dir, showWarnings = FALSE, recursive = TRUE)
+
+  # Canonical Genotype 1..200 mapping from GS population information.xlsx
+  gs_canonical_map <- gs_r1_lookup %>%
+    left_join(gs_r2_lookup, by = "Genotype_Clean") %>%
+    transmute(
+      Plot_ID   = as.integer(Genotype_No),
+      Genotype  = Genotype_Clean,
+      Sr_No_R1  = as.integer(Sr_R1),
+      Sr_No_R2  = as.integer(Sr_R2),
+      Block_R1  = as.integer(Block_Pos_GS_R1),
+      Block_R2  = as.integer(Block_Pos_GS_R2)
+    ) %>%
+    arrange(Plot_ID)
+
+  stopifnot(identical(gs_canonical_map$Plot_ID, 1:200))
+
+  # Construct enriched per-environment Stage-1 BLUE GWAS tables ordered strictly by Plot_ID (1..200)
+  gwas_env_sheets <- list()
+  env_file_map <- c(
+    "Delhi_S2"   = "GWAS_DataSheet_1_Delhi_S2_NWPZ_Baseline_Genotype_1_to_200.csv",
+    "Delhi_S1"   = "GWAS_DataSheet_2_Delhi_S1_NWPZ_Warm_Genotype_1_to_200.csv",
+    "Dharwad_S1" = "GWAS_DataSheet_3_Dharwad_S1_PZ_Warm_I_Genotype_1_to_200.csv",
+    "Dharwad_S2" = "GWAS_DataSheet_4_Dharwad_S2_PZ_Warm_II_Genotype_1_to_200.csv"
+  )
+
+  for (sh_code in names(env_file_map)) {
+    sub_b <- blues_df %>%
+      filter(Sheet == sh_code) %>%
+      mutate(
+        Tmax_Count    = T4_Count,
+        Delta_T1_T2   = T2_Count - T1_Count,
+        Delta_T2_T3   = T3_Count - T2_Count,
+        Delta_T3_T4   = T4_Count - T3_Count,
+        Delta_T3_Tmax = T4_Count - T3_Count,
+        Delta_T1_T4   = T4_Count - T1_Count,
+        Delta_T1_Tmax = T4_Count - T1_Count,
+        Rate_T3_Tmax  = Rate_T3_T4,
+        Max_Rate      = pmax(Rate_E_T1, Rate_T1_T2, Rate_T2_T3, Rate_T3_T4, na.rm = TRUE),
+        Relative_AUTPC = AUTPC_norm
+      )
+
+    env_gwas_df <- gs_canonical_map %>%
+      left_join(sub_b, by = "Genotype") %>%
+      arrange(Plot_ID) %>%
+      select(
+        Plot_ID, Genotype, Sr_No_R1, Sr_No_R2,
+        T1_Count, T2_Count, T3_Count, T4_Count, Tmax_Count, PT_Count,
+        GrainYld, TKW, TCE,
+        AUTPC, AUTPC_norm, Relative_AUTPC,
+        AUTPC_Early, AUTPC_Late, Mean_Tiller_Early, Mean_Tiller_Late, AUTPC_Asymmetry,
+        Rate_E_T1, Rate_T1_T2, Rate_T2_T3, Rate_T3_T4, Rate_T3_Tmax, Max_Rate,
+        Delta_T1_T2, Delta_T2_T3, Delta_T3_T4, Delta_T3_Tmax, Delta_T1_T4, Delta_T1_Tmax,
+        Int_E_T1, Int_T1_T2, Int_T2_T3, Int_T3_T4
+      )
+
+    stopifnot(nrow(env_gwas_df) == 200L, identical(env_gwas_df$Plot_ID, 1:200), sum(is.na(env_gwas_df$GrainYld)) == 0L)
+    write.csv(env_gwas_df, file.path(gwas_out_dir, env_file_map[[sh_code]]), row.names = FALSE)
+    # Also write standard short name for direct script compatibility
+    write.csv(env_gwas_df, file.path(gwas_out_dir, paste0("DataSheet_", sh_code, ".csv")), row.names = FALSE)
+    gwas_env_sheets[[sh_code]] <- env_gwas_df
+  }
+
+  # Cross-Environment Plasticity, Stability & Selection Index GWAS Datasheet (Plot_ID 1..200)
+  sec23_tsi_path <- file.path(assets_dir, "Section_2.3_Phenology_Indices", "Section_2.3_Manuscript_and_Supplementary_Tables.xlsx")
+  tsi_geno_tbl <- readxl::read_excel(sec23_tsi_path, sheet = "Table_S6B_Genotype_TSI") %>%
+    select(Genotype, TSI_NWPZ_Warm, TSI_PZ_Warm_I, TSI_PZ_Warm_II, Retention_Ratio_PZ_Warm_II)
+
+  fw_geno_tbl <- read.csv(file.path(assets_dir, "Section_2.6_Phenotypic_Plasticity", "Finlay_Wilkinson_Classes.csv"), stringsAsFactors = FALSE) %>%
+    select(Genotype, FW_Slope_OLS = FW_Slope, FW_Slope_SE, FW_R2, FW_Slope_BLUP = BLUP_Slope, FW_Slope_LOEO = Slope_LOGO, FW_Quadrant = Quadrant)
+
+  filt_geno_tbl <- read.csv(file.path(assets_dir, "Section_2.8_GGE_Stability", "Final_Genotype_Filtering_Matrix.csv"), stringsAsFactors = FALSE) %>%
+    select(
+      Genotype,
+      Mean_Yield_4Env_BLUE, Mean_Std_Yield_4Env, Mean_Yield_Delhi_Randomized, Mean_Yield_PZ_Descriptive,
+      Mean_PT_4Env, Mean_TCE_4Env, Mean_AUTPC_norm_4Env, Mean_TKW_4Env,
+      TSI_Global, TSI_Delhi, TSI_Class,
+      GGE_PC1_Score, GGE_PC2_Score, GGE_AEC_Projection, GGE_AEC_Orthogonal_Signed, GGE_AEC_Stability_Penalty,
+      NWPZ_Zone_Std_Yield, NWPZ_Zone_Stability_Penalty, NWPZ_Zone_Ideotype_Z, NWPZ_Zone_Rank,
+      PZ_Zone_Std_Yield, PZ_Zone_Stability_Penalty, PZ_Zone_Ideotype_Z, PZ_Zone_Rank,
+      Composite_Ideotype_Z, Ideotype_Rank,
+      Trajectory_Baseline, Vigor_Baseline, TCE_Class_Baseline, Master_Profile
+    )
+
+  gwas_cross_env_df <- gs_canonical_map %>%
+    left_join(tsi_geno_tbl, by = "Genotype") %>%
+    left_join(fw_geno_tbl, by = "Genotype") %>%
+    left_join(filt_geno_tbl, by = "Genotype") %>%
+    arrange(Plot_ID)
+
+  stopifnot(nrow(gwas_cross_env_df) == 200L, identical(gwas_cross_env_df$Plot_ID, 1:200))
+  write.csv(gwas_cross_env_df, file.path(gwas_out_dir, "GWAS_DataSheet_5_CrossEnv_Plasticity_Stability_and_Ideotype_Indices_Genotype_1_to_200.csv"), row.names = FALSE)
+  write.csv(gwas_cross_env_df, file.path(gwas_out_dir, "GWAS_Combined_Global_Stability_Indices.csv"), row.names = FALSE)
+
+  # Wide Multi-Environment All-4-Environments GWAS Matrix (Plot_ID 1..200) for GAPIT / rMVP / TASSEL
+  core_gwas_traits <- c(
+    "T1_Count", "T2_Count", "T3_Count", "T4_Count", "PT_Count",
+    "GrainYld", "TKW", "TCE", "AUTPC", "AUTPC_norm",
+    "Mean_Tiller_Early", "Mean_Tiller_Late", "AUTPC_Asymmetry",
+    "Rate_E_T1", "Rate_T1_T2", "Rate_T2_T3", "Rate_T3_T4", "Max_Rate"
+  )
+  env_suffix_map <- c(
+    "Delhi_S2"   = "NWPZ_Baseline",
+    "Delhi_S1"   = "NWPZ_Warm",
+    "Dharwad_S1" = "PZ_Warm_I",
+    "Dharwad_S2" = "PZ_Warm_II"
+  )
+
+  gwas_wide_all4 <- gs_canonical_map
+  for (sh_code in names(env_suffix_map)) {
+    sfx <- env_suffix_map[[sh_code]]
+    sub_w <- gwas_env_sheets[[sh_code]] %>%
+      select(Plot_ID, all_of(core_gwas_traits))
+    names(sub_w)[-1] <- paste0(names(sub_w)[-1], "_", sfx)
+    gwas_wide_all4 <- gwas_wide_all4 %>% left_join(sub_w, by = "Plot_ID")
+  }
+  gwas_wide_all4 <- gwas_wide_all4 %>%
+    left_join(
+      gwas_cross_env_df %>% select(
+        Plot_ID,
+        TSI_NWPZ_Warm, TSI_PZ_Warm_I, TSI_PZ_Warm_II, TSI_Global,
+        FW_Slope_OLS, FW_Slope_BLUP,
+        GGE_PC1_Score, GGE_PC2_Score, GGE_AEC_Stability_Penalty,
+        Mean_Yield_4Env_BLUE, Mean_PT_4Env, Mean_TCE_4Env, Mean_AUTPC_norm_4Env, Mean_TKW_4Env,
+        NWPZ_Zone_Ideotype_Z, PZ_Zone_Ideotype_Z, Composite_Ideotype_Z
+      ),
+      by = "Plot_ID"
+    ) %>%
+    arrange(Plot_ID)
+
+  stopifnot(nrow(gwas_wide_all4) == 200L, identical(gwas_wide_all4$Plot_ID, 1:200))
+  write.csv(gwas_wide_all4, file.path(gwas_out_dir, "GWAS_Master_Wide_All_4_Environments_Genotype_1_to_200.csv"), row.names = FALSE)
+
+  if (requireNamespace("openxlsx", quietly = TRUE)) {
+    wb_gwas <- openxlsx::createWorkbook()
+    for (sh_g in list(
+      list(name = "1_NWPZ_Baseline_Delhi_S2", data = gwas_env_sheets[["Delhi_S2"]]),
+      list(name = "2_NWPZ_Warm_Delhi_S1",     data = gwas_env_sheets[["Delhi_S1"]]),
+      list(name = "3_PZ_Warm_I_Dharwad_S1",   data = gwas_env_sheets[["Dharwad_S1"]]),
+      list(name = "4_PZ_Warm_II_Dharwad_S2",  data = gwas_env_sheets[["Dharwad_S2"]]),
+      list(name = "5_CrossEnv_Plasticity_Stab", data = gwas_cross_env_df),
+      list(name = "6_Wide_All_4_Environments",  data = gwas_wide_all4),
+      list(name = "7_Genotype_1_to_200_Key",    data = gs_canonical_map)
+    )) {
+      openxlsx::addWorksheet(wb_gwas, sh_g$name)
+      openxlsx::writeDataTable(wb_gwas, sh_g$name, sh_g$data, withFilter = TRUE)
+      openxlsx::freezePane(wb_gwas, sh_g$name, firstRow = TRUE)
+      openxlsx::setColWidths(wb_gwas, sh_g$name, cols = seq_len(ncol(sh_g$data)), widths = "auto")
+    }
+    openxlsx::saveWorkbook(wb_gwas, file.path(gwas_out_dir, "GWAS_Phenotype_Master_Workbook_All_4_Environments_Genotype_1_to_200.xlsx"), overwrite = TRUE)
+  }
+}
 
 # ==============================================================================
 # WRAP-UP & PIPELINE COMPLETION
