@@ -157,11 +157,10 @@ write.csv <- function(x, file = "", row.names = FALSE, ...) {
 }
 
 # Output Root Directory
-assets_dir <- file.path(project_root, "Final_Manuscript_Assets")
+locked_sibling_assets <- file.path(dirname(project_root), "03_Locked_Manuscript_Assets_Sections_1_to_2.8")
+assets_dir <- if (dir.exists(locked_sibling_assets)) locked_sibling_assets else file.path(project_root, "Final_Manuscript_Assets")
 dir.create(assets_dir, showWarnings = FALSE, recursive = TRUE)
 
-archive_rejected_dir <- file.path(project_root, "Archive_Rejected")
-dir.create(archive_rejected_dir, showWarnings = FALSE, recursive = TRUE)
 
 # Standardized Publication Excel Header Style
 if (requireNamespace("openxlsx", quietly = TRUE)) {
@@ -227,7 +226,7 @@ env_metadata <- master_pheno_spec %>%
 
 
 # ==============================================================================
-# SECTION 1: METEOROLOGICAL CHARACTERIZATION & THERMAL PHENOLOGY
+# SECTION 1 [Manuscript Section 1]: METEOROLOGICAL CHARACTERIZATION & THERMAL PHENOLOGY
 # ==============================================================================
 cat(">>> Executing Section 1: Meteorological Analysis & Thermal Disparities...\n")
 sec1_dir <- file.path(assets_dir, "Section_1_Weather_and_Treatments")
@@ -377,43 +376,6 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
     ) %>%
     select(Environment = Environment_Target, Stage, Delta_Days, Tmean, Tmax, Tmin,
            Delta_Tmean, Delta_Tmax, Delta_Tmin, Delta_GDD, Delta_GDD_Tmin, Delta_Pace_GDD_d)
-
-  # 1.4 Clean Up & Archive Legacy/Redundant Section 1 Plots and CSVs
-  weather_alt_dir <- file.path(project_root, "Curiosity_And_Iterations", "Weather_Alternative_Plots")
-  dir.create(weather_alt_dir, showWarnings = FALSE, recursive = TRUE)
-  sec1_archive_dir <- file.path(archive_rejected_dir, "Section_1_Legacy_Weather")
-  dir.create(sec1_archive_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # Move misplaced AUTPC_norm anchor table to Section 2.3 if present in Section 1
-  sec5_dir_early <- file.path(assets_dir, "Section_2.3_Phenology_Indices")
-  dir.create(sec5_dir_early, showWarnings = FALSE, recursive = TRUE)
-  misplaced_anchor <- file.path(sec1_dir, "Table_Anchor_Sensitivity_AUTPC_norm.csv")
-  if (file.exists(misplaced_anchor)) {
-    file.copy(misplaced_anchor, file.path(sec5_dir_early, "Table_Anchor_Sensitivity_AUTPC_norm.csv"), overwrite = TRUE)
-    unlink(misplaced_anchor)
-  }
-
-  legacy_sec1_files <- c(
-    "Fig_1A_Weather_TimeSeries.png",
-    "Fig_1B_Window_Tmax_Comparison.png",
-    "Fig_1C_Window_GDD_Comparison.png",
-    "Weather_Soil_Crown_Dynamics.png",
-    "Table_S1_Phenological_Window_Weather.csv",
-    "Table_S1_Weather_Treatment_Summary.csv",
-    "Table_GDD_Emergence_Dynamics.csv",
-    "Table_GDD_Emergence_Stage_by_Environment_Wide.csv",
-    "Table_Crown_Soil_Environment_Summary.csv",
-    "Table_Crown_Soil_Temperature_Regimes.csv",
-    "Table_S1_Stage_Specific_Thermal_Dynamics.csv",
-    "Table_S2_Temperature_Disparities.csv"
-  )
-  for (lf in legacy_sec1_files) {
-    lf_path <- file.path(sec1_dir, lf)
-    if (file.exists(lf_path)) {
-      file.copy(lf_path, file.path(sec1_archive_dir, lf), overwrite = TRUE)
-      unlink(lf_path)
-    }
-  }
 
   # 1.5 Crown-Zone Diurnal Soil Temperature Processing (09:00 h, 13:00 h, 17:00 h)
   soil_clean <- soil %>%
@@ -1061,7 +1023,7 @@ if (isTRUE(RUN_SECTION_1_WEATHER)) {
 
 
 # ==============================================================================
-# SECTION 2: INTRA-ENVIRONMENT BLOCK ADJUSTMENT & BLUE EXTRACTION
+# SECTION 2 [Manuscript Section 2.0]: INTRA-ENVIRONMENT BLOCK ADJUSTMENT & STAGE-1 BLUE EXTRACTION
 # ==============================================================================
 cat(">>> Executing Section 2: Intra-Environment Linear Mixed Models & BLUE Extraction...\n")
 
@@ -1662,18 +1624,6 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
   # ----------------------------------------------------------------------------
   # 2.8 Extract Primary BLUEs (Model A for Delhi, Fixed RCBD for Dharwad) & Compare Against Prior Cache
   # ----------------------------------------------------------------------------
-  # Snapshot any legacy cached BLUEs before purging
-  prior_cache_list <- list()
-  for (s_code in env_metadata$Sheet) {
-    old_candidates <- list.files(cache_dir, pattern = paste0("^BLUEs_", s_code, "_.*\\.rds$"), full.names = TRUE)
-    old_candidates <- setdiff(old_candidates, file.path(cache_dir, paste0("BLUEs_", s_code, "_", cache_key, ".rds")))
-    if (length(old_candidates) > 0) {
-      f_info <- file.info(old_candidates)
-      latest_old <- rownames(f_info)[which.max(f_info$mtime)]
-      prior_cache_list[[s_code]] <- readRDS(latest_old)
-    }
-  }
-
   if (isTRUE(CLEAR_BLUE_CACHE)) {
     all_old_blue_rds <- list.files(cache_dir, pattern = "^BLUEs_.*\\.rds$", full.names = TRUE)
     if (length(all_old_blue_rds) > 0) {
@@ -1784,35 +1734,6 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
   write.csv(audit_36_table, file.path(sec2_dir, "Table_BLUE_Model_Specifications_and_Diagnostics.csv"), row.names = FALSE)
   write.csv(geno_se_table,  file.path(sec2_dir, "Table_Genotype_BLUEs_and_SEs.csv"), row.names = FALSE)
 
-  # Compare Old vs New BLUEs if prior cache existed
-  if (length(prior_cache_list) > 0) {
-    old_vs_new_rows <- list()
-    for (s_code in names(prior_cache_list)) {
-      old_b <- prior_cache_list[[s_code]]
-      new_b <- all_blues[[s_code]]
-      old_b <- old_b[match(new_b$Genotype, as.character(old_b$Genotype)), ]
-      for (tr in traits_to_run) {
-        if (tr %in% names(old_b)) {
-          r_p <- cor(old_b[[tr]], new_b[[tr]], method = "pearson")
-          r_s <- cor(old_b[[tr]], new_b[[tr]], method = "spearman")
-          rk_o <- rank(-old_b[[tr]], ties.method = "average")
-          rk_n <- rank(-new_b[[tr]], ties.method = "average")
-          old_vs_new_rows[[paste0(s_code, "_", tr)]] <- data.frame(
-            Sheet = s_code,
-            Environment = unique(new_b$Environment),
-            Trait = tr,
-            Pearson_r_Old_vs_New = r_p,
-            Spearman_rho_Old_vs_New = r_s,
-            Max_Abs_Rank_Shift = max(abs(rk_n - rk_o)),
-            Max_Abs_BLUE_Diff  = max(abs(new_b[[tr]] - old_b[[tr]])),
-            stringsAsFactors = FALSE
-          )
-        }
-      }
-    }
-    old_vs_new_table <- bind_rows(old_vs_new_rows)
-    write.csv(old_vs_new_table, file.path(sec2_dir, "Table_Old_vs_New_BLUE_Comparison.csv"), row.names = FALSE)
-  }
 
 } else {
   cat(sprintf("  -> Section 2 [SKIPPED - Loading Stage-1 BLUEs matching Cryptographic Key: %s]\n", cache_key))
@@ -1827,14 +1748,25 @@ if (isTRUE(RUN_SECTION_2_BLUES)) {
       TCE = ifelse(T4_Count == 0, NA_real_, PT_Count / T4_Count)
     )
   all_blues <- list()
+  geno_se_csv <- file.path(assets_dir, "Section_2_BLUE_Extraction", "Table_Genotype_BLUEs_and_SEs.csv")
   for (s_code in env_metadata$Sheet) {
     c_file <- file.path(cache_dir, paste0("BLUEs_", s_code, "_", cache_key, ".rds"))
-    if (!file.exists(c_file)) {
-      stop(sprintf("CRITICAL CACHE KEY MISMATCH: Expected cached BLUE file '%s' not found. Set RUN_SECTION_2_BLUES <- TRUE to recompute BLUEs for current data/model specification.", basename(c_file)))
+    if (file.exists(c_file)) {
+      b_loaded <- readRDS(c_file)
+      b_loaded$Environment <- env_metadata$Env_Name[env_metadata$Sheet == s_code]
+      all_blues[[s_code]] <- b_loaded
+    } else if (file.exists(geno_se_csv)) {
+      gse_all <- utils::read.csv(geno_se_csv, stringsAsFactors = FALSE)
+      b_loaded <- gse_all %>%
+        dplyr::filter(Sheet == s_code) %>%
+        dplyr::select(Genotype, Trait, BLUE) %>%
+        tidyr::pivot_wider(names_from = Trait, values_from = BLUE) %>%
+        as.data.frame()
+      b_loaded$Environment <- env_metadata$Env_Name[env_metadata$Sheet == s_code]
+      all_blues[[s_code]] <- b_loaded
+    } else {
+      stop(sprintf("CRITICAL CACHE KEY MISMATCH: Expected cached BLUE file '%s' or '%s' not found. Set RUN_SECTION_2_BLUES <- TRUE to recompute BLUEs.", basename(c_file), basename(geno_se_csv)))
     }
-    b_loaded <- readRDS(c_file)
-    b_loaded$Environment <- env_metadata$Env_Name[env_metadata$Sheet == s_code]
-    all_blues[[s_code]] <- b_loaded
   }
 }
 
@@ -1887,35 +1819,13 @@ stopifnot(max_autpc_decomp_err < 1e-10, sum(is.na(blues_df$TCE)) == 0L)
 
 
 # ==============================================================================
-# SECTION 3: BASELINE PHENOTYPIC DISTRIBUTIONS & GLOBAL PARAMETER ANOVA
+# SECTION 3 [Manuscript Section 2.1]: BASELINE PHENOTYPIC DISTRIBUTIONS & GLOBAL PARAMETER ANOVA
 # ==============================================================================
 cat(">>> Executing Section 3: Phenotypic Distributions & Global ANOVA...\n")
 
 if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
   sec21_dir <- file.path(assets_dir, "Section_2.1_Phenotypic_Distributions")
   dir.create(sec21_dir, showWarnings = FALSE, recursive = TRUE)
-  arch_sec21_dir <- file.path(project_root, "Archive_Rejected", "Section_2.1_Legacy_Distributions")
-  dir.create(arch_sec21_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # Archive legacy/redundant figures and split CSVs if present in Section_2.1_Phenotypic_Distributions
-  legacy_sec21_files <- c(
-    "Compound_Global_Rainclouds.png",
-    "Global_Parameter_ANOVA_Professional.png",
-    "TKW_ANOVA_and_Paired_Profile.png",
-    "Diagnostic_Residuals_QQ_Repeated_Measures.png",
-    "Table_Multi_Environment_Trait_Summary_Statistics.csv",
-    "Table_Repeated_Measures_ANOVA_Summary.csv",
-    "Table_Residual_Variance_Heterogeneity.csv",
-    "Table_Repeated_Measures_Pairwise_Contrasts.csv"
-  )
-  for (lf in legacy_sec21_files) {
-    src_lf <- file.path(sec21_dir, lf)
-    if (file.exists(src_lf)) {
-      file.copy(src_lf, file.path(arch_sec21_dir, lf), overwrite = TRUE)
-      unlink(src_lf)
-    }
-  }
-
   # 3.1 Model Data Checks & Design Balance (Ordered Chronologically Along Developmental Cascade)
   traits_sec3 <- c("T4_Count", "PT_Count", "TCE", "TKW", "GrainYld")
   trait_titles_sec3 <- c(
@@ -2543,7 +2453,7 @@ if (isTRUE(RUN_SECTION_3_DISTRIBUTIONS)) {
 
 
 # ==============================================================================
-# SECTION 4: UNSUPERVISED PHENOLOGY CLASSIFICATIONS & K-MEANS TRAJECTORIES
+# SECTION 4 [Manuscript Section 2.2]: UNSUPERVISED PHENOLOGY CLASSIFICATIONS & K-MEANS TRAJECTORIES
 # ==============================================================================
 cat(">>> Executing Section 4: Phenology Trajectories & K-Means Clustering...\n")
 
@@ -2743,38 +2653,6 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
   sec22_dir <- file.path(assets_dir, "Section_2.2_Phenology_Classifications")
   dir.create(sec22_dir, showWarnings = FALSE, recursive = TRUE)
 
-  # Archive all legacy/redundant figures and fragmented CSV/Excel tables safely
-  archive_sec22_dir <- file.path(project_root, "Archive_Rejected", "Section_2.2_Legacy_Classifications")
-  dir.create(archive_sec22_dir, showWarnings = FALSE, recursive = TRUE)
-
-  legacy_sec22_patterns <- c(
-    "^A_Peak_Phase_TrendLines\\.png$",
-    "^B_KMeans_Shifts_TrendLines\\.png$",
-    "^PCA_Cluster_Plot\\.png$",
-    "^Silhouette_Optimization_Plot\\.png$",
-    "^Table_Cluster_Validity_Silhouette_k2_k6\\.csv$",
-    "^Table_Trajectory_Shape_Cluster_Centroids\\.csv$",
-    "^Table_Trajectory_Transition.*\\.csv$",
-    "^Table_Vigor_Transition.*\\.csv$",
-    "^Table_TCE_Transition.*\\.csv$",
-    "^Table_Phenological_Transition_Tests\\.(csv|xlsx)$",
-    "^Table_TCE_Transition_Tests\\.(csv|xlsx)$",
-    "^Phenology_Cluster_Assignments\\.csv$"
-  )
-  for (pat in legacy_sec22_patterns) {
-    matched_files <- list.files(sec22_dir, pattern = pat, full.names = TRUE)
-    for (mf in matched_files) {
-      if (file.exists(mf)) {
-        file.copy(mf, file.path(archive_sec22_dir, basename(mf)), overwrite = TRUE)
-        unlink(mf)
-      }
-    }
-  }
-  old_comp_trans <- file.path(sec22_dir, "Compound_Phenological_Transitions_Vigor_Trajectory_TCE.png")
-  if (file.exists(old_comp_trans)) {
-    file.copy(old_comp_trans, file.path(archive_sec22_dir, "Compound_Phenological_Transitions_3Panel_Prior.png"), overwrite = TRUE)
-  }
-
   # ----------------------------------------------------------------------------
   # 4.3 Consolidated Supplementary Table S4: K-Means Cluster Centroids, Typology
   #     Summaries (Trajectory, Vigor, TCE) & Silhouette Validity (k = 2..6)
@@ -2905,7 +2783,7 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
       pct_1_to_2 <- if (b1_n > 0) 100 * n12 / b1_n else 0.0
       pct_2_to_1 <- if (b2_n > 0) 100 * n21 / b2_n else 0.0
 
-      # Data-driven branching on significance and sign of net_shift (Item 7)
+      # Data-driven branching on McNemar test significance and sign of net regime shift
       dir_phrase <- if (m_test$p.value >= 0.05) {
         sprintf("No statistically significant regime shift in %s", lvl1)
       } else if (net_shift > 0) {
@@ -3486,7 +3364,7 @@ if (isTRUE(RUN_SECTION_4_PHENOLOGY)) {
 
 
 # ==============================================================================
-# SECTION 5: MICRO-PHENOLOGY INDICES (AUTPC & TILLER STABILITY INDEX)
+# SECTION 5 [Manuscript Section 2.3]: MICRO-PHENOLOGY INDICES (AUTPC, TCE & TILLER STABILITY INDEX)
 # ==============================================================================
 cat(">>> Executing Section 5: Micro-Phenology Indices (AUTPC & TSI)...\n")
 
@@ -3528,45 +3406,6 @@ blues_df <- blues_df %>%
 if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   sec23_dir <- file.path(assets_dir, "Section_2.3_Phenology_Indices")
   dir.create(sec23_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # Archive duplicate Section_2.3_Micro_Phenology folder and all legacy/redundant Section 2.3 files
-  archive_sec23_dir <- file.path(project_root, "Archive_Rejected", "Section_2.3_Legacy_Micro_Phenology")
-  dir.create(archive_sec23_dir, showWarnings = FALSE, recursive = TRUE)
-
-  sec23_micro_dir <- file.path(assets_dir, "Section_2.3_Micro_Phenology")
-  if (dir.exists(sec23_micro_dir)) {
-    micro_files <- list.files(sec23_micro_dir, full.names = TRUE)
-    for (mf in micro_files) {
-      file.copy(mf, file.path(archive_sec23_dir, paste0("MicroPhenologyDup_", basename(mf))), overwrite = TRUE)
-      unlink(mf)
-    }
-    unlink(sec23_micro_dir, recursive = TRUE)
-  }
-
-  legacy_sec23_patterns <- c(
-    "^AUTPC_Component_Yield_Correlations\\.csv$",
-    "^AUTPC_Decomposition_Heatmap\\.png$",
-    "^Table_Anchor_Sensitivity_AUTPC_norm\\.csv$",
-    "^Table_TSI_MultiStress_Transitions\\.(csv|xlsx)$",
-    "^Table_TSI_Transition_NWPZ_Warm_vs_PZ_Acute\\.csv$",
-    "^Table_TSI_Yield_Validation_With_Position_Adjustment\\.csv$",
-    "^Table_Yield_Component_Path_Regime_Shift\\.csv$",
-    "^TSI_Direct_Yield_Validation\\.png$",
-    "^Yield_Component_Source_Sink_Regime_Shift\\.png$"
-  )
-  for (pat in legacy_sec23_patterns) {
-    matched_f <- list.files(sec23_dir, pattern = pat, full.names = TRUE)
-    for (mf in matched_f) {
-      if (file.exists(mf)) {
-        file.copy(mf, file.path(archive_sec23_dir, basename(mf)), overwrite = TRUE)
-        unlink(mf)
-      }
-    }
-  }
-  old_tsi_comp <- file.path(sec23_dir, "TSI_Compound_Yield_Validation.png")
-  if (file.exists(old_tsi_comp)) {
-    file.copy(old_tsi_comp, file.path(archive_sec23_dir, "TSI_Compound_Yield_Validation_SingleScatter_Prior.png"), overwrite = TRUE)
-  }
 
   # ----------------------------------------------------------------------------
   # 5.1b Multi-Stress Progression of TSI Across NWPZ Warm, PZ Warm I, and PZ Warm II
@@ -3700,7 +3539,7 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
 
   # ----------------------------------------------------------------------------
   # 5.1c Out-of-Sample Cross-Validation & Meng-Rosenthal-Rubin Delta-r Benchmark
-  #      (Item 8: Demonstrate that TSI is a descriptive within-regime retention index
+  #      (Demonstrate that TSI is a descriptive within-regime retention index
   #       with |r| <= 0.11 out-of-sample, and test residual-based retention)
   # ----------------------------------------------------------------------------
   meng_z_test <- function(y, x1, x2) {
@@ -3875,7 +3714,7 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   stopifnot(sum(is.na(table_4_correlations)) == 0L)
 
   # Main Text Table 4 omits the wide Methodological_Scope column (replaced by concise Footnote_Ref [a, b, c])
-  # Full archival version with Methodological_Scope is preserved in Archive_Rejected and in the Excel workbook
+  # Full extended version with Methodological_Scope is preserved in the Section 2.3 Excel workbook
   t4_main_clean <- table_4_correlations %>% select(-Plot_Label, -Methodological_Scope)
   t4_archival   <- table_4_correlations %>% select(-Plot_Label)
   t4_footnote_text <- paste0(
@@ -3887,11 +3726,6 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
   write.csv(
     t4_main_clean,
     file.path(sec23_dir, "Table_4_MicroPhenology_AUTPC_and_TSI_Yield_Correlations.csv"),
-    row.names = FALSE
-  )
-  write.csv(
-    t4_archival,
-    file.path(archive_sec23_dir, "Table_4_Archival_With_Methodological_Scope.csv"),
     row.names = FALSE
   )
 
@@ -4201,17 +4035,6 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
       y = "Genotype Composition (%)"
     )
 
-  # Archive the 3-panel combined version (with AUTPC heatmap on top) for supervisor consultation
-  p_sec23_3panel_archive <- (p_panel_heat_arch / (
-    (p_panel_a_tsi + labs(title = "B. TSI Direct Yield Validation Under Heat Stress (PZ Warm II)")) |
-    (p_panel_b_tsi_alluv + labs(title = "C. Multi-Stress TSI Classification & Stability Retention"))
-  )) +
-    plot_layout(heights = c(1.0, 1.08))
-  ggsave(
-    file.path(archive_sec23_dir, "TSI_and_AUTPC_Decomposition_3Panel_For_Supervisor_Consult.png"),
-    plot = p_sec23_3panel_archive, width = 16.5, height = 11.2, dpi = 600
-  )
-
   # Save the clean 2-panel TSI Master Figure to Section_2.3_Phenology_Indices
   p_sec23_master_2panel <- (p_panel_a_tsi | p_panel_b_tsi_alluv) +
     plot_layout(widths = c(1.05, 1.0)) +
@@ -4230,25 +4053,13 @@ if (isTRUE(RUN_SECTION_5_MICROPHENOLOGY)) {
 
 
 # ==============================================================================
-# SECTION 6: NON-LINEAR THERMAL MODELING (GAM TRAJECTORIES)
+# SECTION 6 [Manuscript Section 2.4]: NON-LINEAR THERMAL MODELING (REML-GAM TRAJECTORIES)
 # ==============================================================================
 cat(">>> Executing Section 6: Non-Linear Thermal Modeling (GAM)...\n")
 
 if (isTRUE(RUN_SECTION_6_THERMAL_GAM)) {
   sec24_dir <- file.path(assets_dir, "Section_2.4_Thermal_Modeling")
   dir.create(sec24_dir, showWarnings = FALSE, recursive = TRUE)
-
-# Archive previous figures safely to Archive_Rejected
-archive_rejected_dir <- file.path(project_root, "Archive_Rejected")
-dir.create(archive_rejected_dir, showWarnings = FALSE, recursive = TRUE)
-old_gam_png <- file.path(sec24_dir, "Thermal_GAM_Trajectories.png")
-if (file.exists(old_gam_png)) {
-  file.copy(old_gam_png, file.path(archive_rejected_dir, "Thermal_GAM_Trajectories_Prior.png"), overwrite = TRUE)
-}
-old_supp_png <- file.path(sec24_dir, "Thermal_GAM_Genotype_Faceted_Supplement.png")
-if (file.exists(old_supp_png)) {
-  file.copy(old_supp_png, file.path(archive_rejected_dir, "Thermal_GAM_Genotype_Faceted_Supplement_Prior.png"), overwrite = TRUE)
-}
 
 # 6.1 Developmental Milestone Windows & Cumulative Thermal/Chronological Coordinates
 # Primary developmental scale: GDD from emergence (uncapped)
@@ -4280,7 +4091,7 @@ stage_milestones <- gdd_from_emergence_table %>%
     GDD_Capped = Cum_GDD_Capped   # Sensitivity check axis (capped from emergence)
   )
 
-# Print cumulative GDD totals and percentage spread across environments (Task 10)
+# Print cumulative GDD totals and percentage spread across environments
 total_gdd_summary <- stage_milestones %>%
   filter(Stage == "T4") %>%
   select(Environment, Total_GDD_Uncapped = GDD, Total_GDD_Capped = GDD_Capped)
@@ -4300,10 +4111,8 @@ cat(sprintf("  Thermal Accumulation Range (Uncapped): %.2f - %.2f deg C d (Sprea
 cat(sprintf("  Thermal Accumulation Range (Capped)  : %.2f - %.2f deg C d (Spread: %.2f%%)\n\n",
             min(total_gdd_summary$Total_GDD_Capped), max(total_gdd_summary$Total_GDD_Capped), spread_capped_pct))
 
-# Export stage GDD matrix (Requirement 7)
-write.csv(stage_milestones, file.path(sec24_dir, "Stage_GDD_Milestone_Matrix.csv"), row.names = FALSE)
 
-# 6.2 Reshape Real Empirical Observations (Task 1: N = 3,200, strictly excluding Emergence anchor)
+# 6.2 Reshape Real Empirical Observations (N = 3,200 = 200 Genotypes x 4 Regimes x 4 Stages, strictly excluding Emergence anchor)
 # 200 genotypes x 4 environments x 4 developmental stages (T1...T4)
 gam_data <- blues_df %>%
   select(Genotype, Environment, Env_Factor, T1_Count, T2_Count, T3_Count, T4_Count) %>%
@@ -4330,7 +4139,7 @@ gam_data <- blues_df %>%
   ) %>%
   mutate(Stage = factor(Stage, levels = c("T1", "T2", "T3", "T4")))
 
-# Stopifnot verification checks (Task 1)
+# Integrity assertions verifying complete balanced 3,200-observation Stage-1 BLUE panel
 stopifnot(!any(is.na(gam_data$GDD)))
 stopifnot(!any(is.na(gam_data$GDD_Capped)))
 stopifnot(!any(is.na(gam_data$DAE)))
@@ -4345,7 +4154,7 @@ stopifnot(nrow(gam_data) == 200 * 4 * 4)
 cat("  GAM Dataset Ready: N =", nrow(gam_data), "observations (200 genotypes x 4 regimes x 4 stages).\n")
 cat("  Emergence anchor strictly excluded from model estimation dataset.\n\n")
 
-# 6.3 Fit GAM Models via Exact REML (Task 2: mgcv::gam(method = 'REML'), not bam)
+# 6.3 Fit Hierarchical Generalized Additive Mixed Models (GAMM) via Exact REML (mgcv::gam, method = 'REML')
 # Evaluating Shared-Curve vs Environment-Specific Curves across:
 #   Primary: GDD (Uncapped thermal time from emergence)
 #   Sensitivity Check: GDD_Capped (Heat-capped thermal time from emergence)
@@ -4438,7 +4247,7 @@ extract_smooth_edf <- function(mod) {
   sum(non_re[, "edf"])
 }
 
-# 6.4 Model Comparison & AIC Table (Task 2 & 7)
+# 6.4 Model Architecture Comparison & AIC Evaluation (Shared vs. Environment-Specific Smooths)
 aic_summary_table <- data.frame(
   Axis = c(
     rep("Thermal Time (GDD Uncapped, Primary)", 2),
@@ -4499,9 +4308,8 @@ aic_summary_table <- data.frame(
 
 cat("\n--- Model Architecture & AIC Comparison Table ---\n")
 print(aic_summary_table)
-write.csv(aic_summary_table, file.path(sec24_dir, "GAM_Model_Comparison_AIC.csv"), row.names = FALSE)
 
-# Extract Smooth Term Table & Parametric Coefficients (Task 7)
+# Extract Smooth Term Effective Degrees of Freedom (edf) & Parametric Regime Coefficients
 extract_smooth_table <- function(mod, mod_name, axis_name) {
   s <- summary(mod)
   df <- as.data.frame(s$s.table)
@@ -4539,7 +4347,6 @@ all_smooths <- bind_rows(
   extract_smooth_table(m_common_dae, "m_common_dae", "Chronological_DAE"),
   extract_smooth_table(m_env_dae, "m_env_dae", "Chronological_DAE")
 )
-write.csv(all_smooths, file.path(sec24_dir, "GAM_Smooth_Terms.csv"), row.names = FALSE)
 
 all_params <- bind_rows(
   extract_param_table(m_common, "m_common", "Thermal_GDD_Uncapped"),
@@ -4549,9 +4356,8 @@ all_params <- bind_rows(
   extract_param_table(m_common_dae, "m_common_dae", "Chronological_DAE"),
   extract_param_table(m_env_dae, "m_env_dae", "Chronological_DAE")
 )
-write.csv(all_params, file.path(sec24_dir, "GAM_Parametric_Coefficients.csv"), row.names = FALSE)
 
-# 6.5 Companion Marginal Linear Model (Item 12: nlme::gls with unstructured stage covariance & stage-specific variances)
+# 6.5 Companion Marginal Linear Model (nlme::gls with unstructured stage covariance corSymm & stage-specific variances varIdent)
 cat("  Fitting Companion Marginal Model (nlme::gls with corSymm + varIdent)...\n")
 gam_data_gls <- gam_data %>%
   mutate(Stage_Num = as.integer(Stage)) %>%
@@ -4574,9 +4380,8 @@ if ("asymp.LCL" %in% names(emm_companion_df) && !("lower.CL" %in% names(emm_comp
   emm_companion_df$lower.CL <- emm_companion_df$asymp.LCL
   emm_companion_df$upper.CL <- emm_companion_df$asymp.UCL
 }
-write.csv(emm_companion_df, file.path(sec24_dir, "LMER_Companion_Stage_Means.csv"), row.names = FALSE)
 
-# 6.6 Residual Diagnostics & Variance Heterogeneity Evaluation (Task 4)
+# 6.6 Residual Diagnostics & Variance Heterogeneity Evaluation (Raw Scale vs. Log-Transformed Scale)
 gam_diag <- data.frame(
   Count        = gam_data$Count,
   Fitted       = fitted(m_env),
@@ -4602,9 +4407,8 @@ p_diag <- ggplot(gam_diag, aes(x = Fitted, y = Residual, color = Env_Factor)) +
     y = "Pearson Residuals",
     color = "Environment:"
   )
-ggsave(file.path(sec24_dir, "GAM_Residual_Diagnostics.png"), plot = p_diag, width = 8.5, height = 5.5, dpi = 600)
 
-# Refit on log(Count) as specified in Task 4
+# Sensitivity refit on log(Count) to verify robustness to multiplicative stage variance
 m_env_log <- fit_gam_reml(
   "gam_reml_m_env_gdd_log.rds",
   "log(Count) ~ Env_Factor + s(GDD, by = Env_Factor, k = 3) + s(Genotype, bs = 're') + s(GE, bs = 're')",
@@ -4621,7 +4425,7 @@ cor_log_diag <- cor.test(log_diag$Fitted, log_diag$Abs_Residual)
 cat(sprintf("  Log-transformed Model Residual Correlation: r = %.3f (p = %.2e)\n",
             cor_log_diag$estimate, cor_log_diag$p.value))
 
-# 6.7 Marginal Population Predictions & Assumed Emergence Points (Task 5)
+# 6.7 Marginal Population Predictions (Excluding Random Effects s(Genotype) and s(GE)) & Emergence Reference Anchor
 # Exclude random effects s(Genotype) and s(GE) to capture population curves
 pred_grid_gdd <- gam_data %>%
   group_by(Env_Factor) %>%
@@ -4677,7 +4481,7 @@ emergence_anchor_dae <- data.frame(
   Label = "assumed (E)"
 )
 
-# 6.8 Main Figure: Dual-Panel Thermal (GDD) & Chronological (DAE) GAM Trajectories (Task 6a)
+# 6.8 Main Figure 5: Dual-Panel Thermal (GDD) & Chronological (DAE) GAM Trajectories
 # Axis labels use Unicode degree/multiplication symbols; in-panel stats badges; stage labels at
 # NWPZ Baseline reference positions (well-separated GDD/DAE coordinates, no inter-environment clutter)
 
@@ -4807,7 +4611,7 @@ p_gam_main <- (p_main_gdd + p_main_dae) +
 ggsave(file.path(sec24_dir, "Thermal_GAM_Trajectories.png"),
        plot = p_gam_main, width = 14, height = 6.5, dpi = 600)
 
-# 6.9 Supplement Figure: 4-Panel Faceted View with Individual Genotype Trajectories (Task 6b)
+# 6.9 Supplementary Figure S3: 4-Panel Faceted View with 200 Individual Genotype Trajectories
 # Fixed shared x-axis (0-720 GDD) for cross-environment comparability; stage labels per facet
 emergence_anchor_facet <- env_metadata %>%
   transmute(
@@ -4872,7 +4676,6 @@ if (exists("master_raw") && !is.null(master_raw) && "AUTPC_norm" %in% names(mast
       Theoretical_Shift      = (0.5 * first(Int_E_T1)) / first(Total_E_T4),
       .groups = "drop"
     )
-  write.csv(anchor_sensitivity_export, file.path(sec24_dir, "Table_Anchor_Sensitivity_AUTPC_norm.csv"), row.names = FALSE)
 }
 
 # 6.11 Empirical Thermal Growth Rates (TGR) Strictly on Real Intervals
@@ -4886,7 +4689,6 @@ empirical_rates <- gam_data %>%
   ) %>%
   summarize(Max_TGR = if (all(is.na(TGR))) NA_real_ else max(TGR, na.rm = TRUE), .groups = "drop")
 
-write.csv(empirical_rates, file.path(sec24_dir, "Empirical_Thermal_Rates.csv"), row.names = FALSE)
 # 6.12 Table Consolidation: Manuscript and Supplementary Tables (Section 2.4 Final Deliverables)
 cat("  Consolidating Section 2.4 tables...\n")
 
@@ -4976,35 +4778,6 @@ openxlsx::saveWorkbook(wb_24,
   overwrite = TRUE)
 cat("    -> Table_5, Table_S8, Table_S9, Table_S10 and XLSX workbook created successfully.\n")
 
-# 6.13 Archive Legacy and Source Files to Archive_Rejected/Section_2.4_Legacy_Thermal_Modeling/
-cat("  Archiving Section 2.4 legacy and source files...\n")
-archive_sec24 <- file.path(archive_rejected_dir, "Section_2.4_Legacy_Thermal_Modeling")
-dir.create(archive_sec24, showWarnings = FALSE, recursive = TRUE)
-.legacy_files_24 <- c(
-  "GAM_Residual_Diagnostics.png",          # internal diagnostic only; not submitted
-  "GAM_Architecture_Comparison.csv",       # internal 8-model benchmark (legacy helper)
-  "generate_gam_architecture_comparison.R",# legacy standalone helper script
-  "Table_Anchor_Sensitivity_AUTPC_norm.csv",# covered by Section 2.3 Table S7
-  "GAM_Model_Comparison_AIC.csv",          # source -> renamed Table_S8
-  "GAM_Smooth_Terms.csv",                  # source -> merged into Table_S9
-  "GAM_Parametric_Coefficients.csv",       # source -> merged into Table_S9
-  "LMER_Companion_Stage_Means.csv",        # source -> merged into Table_5
-  "Stage_GDD_Milestone_Matrix.csv",        # source -> merged into Table_5
-  "Empirical_Thermal_Rates.csv"            # source -> renamed Table_S10
-)
-for (.f in .legacy_files_24) {
-  .src <- file.path(sec24_dir, .f)
-  .dst <- file.path(archive_sec24, .f)
-  if (file.exists(.src)) {
-    file.copy(.src, .dst, overwrite = TRUE)
-    file.remove(.src)
-    cat(sprintf("    Archived: %s\n", .f))
-  }
-}
-cat(sprintf("  Archive complete: %d files moved to %s\n",
-            sum(file.exists(file.path(archive_sec24, .legacy_files_24))),
-            basename(archive_sec24)))
-
 # Verify final deliverables are in place
 stopifnot(file.exists(file.path(sec24_dir, "Thermal_GAM_Trajectories.png")))
 stopifnot(file.exists(file.path(sec24_dir, "Thermal_GAM_Genotype_Faceted_Supplement.png")))
@@ -5018,7 +4791,7 @@ cat("  Section 6 Complete: Figures, 4 consolidated tables, XLSX workbook, and ar
 
 
 # ==============================================================================
-# SECTION 7: CATEGORICAL PHENOLOGICAL STRATEGIES & MULTI-ENVIRONMENT YIELD
+# SECTION 7 [Manuscript Section 2.5]: CATEGORICAL PHENOLOGICAL STRATEGIES & MULTI-ENVIRONMENT YIELD
 # ==============================================================================
 cat(">>> Executing Section 7: Strategy Master Profiles & Yield Dynamics...\n")
 
@@ -5167,11 +4940,6 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
   cat(sprintf("[Panel A Trajectory] %s\n", gsub("\n", " | ", lbl_traj)))
   cat(sprintf("[Panel B Vigor]      %s\n", gsub("\n", " | ", lbl_vig)))
   cat(sprintf("[Panel C TSI]        %s\n\n", gsub("\n", " | ", lbl_tsi)))
-
-  old_strat_png <- file.path(sec25_dir, "Figure_Strategy_Yield_Dynamics_Complete.png")
-  if (file.exists(old_strat_png)) {
-    file.copy(old_strat_png, file.path(archive_rejected_dir, "Figure_Strategy_Yield_Dynamics_Complete_Prior.png"), overwrite = TRUE)
-  }
 
   cen_traj <- compute_group_centroids(dyn_df, "Trajectory")
   cen_vig  <- compute_group_centroids(dyn_df, "Vigor")
@@ -5877,7 +5645,7 @@ if (isTRUE(RUN_SECTION_7_CATEGORICAL)) {
 
 # ==============================================================================
 # ==============================================================================
-# SECTION 8: VARIANCE PARTITIONING, HERITABILITY & FINLAY-WILKINSON PLASTICITY
+# SECTION 8 [Manuscript Sections 2.6 & 2.7]: VARIANCE PARTITIONING, HERITABILITY & FINLAY-WILKINSON PLASTICITY
 # ==============================================================================
 cat(">>> Executing Section 8: Variance Partitioning, Heritability & FW Modeling...\n")
 
@@ -6331,22 +6099,13 @@ if (isTRUE(RUN_SECTION_8_PLASTICITY)) {
 }
 
 # ==============================================================================
-# SECTION 9: MULTI-ENVIRONMENT GGE STABILITY & UNIFIED IDEOTYPE SELECTION
+# SECTION 9 [Manuscript Section 2.8]: MULTI-ENVIRONMENT GGE STABILITY & UNIFIED IDEOTYPE SELECTION
 # ==============================================================================
 cat(">>> Executing Section 9: Multi-Environment Stability (GGE & Unified Ideotype Index)...\n")
 
 if (isTRUE(RUN_SECTION_9_GGE_STABILITY)) {
   sec27_dir <- file.path(assets_dir, "Section_2.8_GGE_Stability")
   dir.create(sec27_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # Archive redundant TIFF copy if present so only 1 clean GGE figure exists in Section_2.8_GGE_Stability
-  redundant_tiff <- file.path(sec27_dir, "Figure_S_GGE_Composite.tiff")
-  if (file.exists(redundant_tiff)) {
-    arch_sec28 <- file.path(archive_rejected_dir, "Section_2.8_Redundant_Assets")
-    dir.create(arch_sec28, showWarnings = FALSE, recursive = TRUE)
-    file.copy(redundant_tiff, file.path(arch_sec28, "Figure_S_GGE_Composite.tiff"), overwrite = TRUE)
-    unlink(redundant_tiff)
-  }
 
   yld_wide <- blues_df %>% select(Genotype, Env_Factor, GrainYld) %>% pivot_wider(names_from = Env_Factor, values_from = GrainYld) %>% arrange(Genotype)
   yld_mat <- as.matrix(yld_wide[, env_metadata$Env_Name]); rownames(yld_mat) <- yld_wide$Genotype
@@ -6458,7 +6217,7 @@ if (isTRUE(RUN_SECTION_9_GGE_STABILITY)) {
   write.csv(pz_zone_table,   file.path(sec27_dir, "Table_Ideotype_Ranking_PZ_Zone.csv"), row.names = FALSE)
 
   # ============================================================================
-  # 9.1 CUSTOM HIGH-LEGIBILITY 2-PANEL GGE BIPLOT (Figure_S7_GGE_Composite.png)
+  # 9.1 CUSTOM HIGH-LEGIBILITY 2-PANEL GGE BIPLOT (Figure_S6_GGE_Composite.png)
   # ============================================================================
   # Uniform scalar factor for environment vectors so they match the genotype hull radius (preserving all angles & projections)
   max_g_rad <- max(sqrt(filtering_matrix$GGE_PC1_Score^2 + filtering_matrix$GGE_PC2_Score^2))
@@ -6719,7 +6478,7 @@ if (isTRUE(RUN_SECTION_9_GGE_STABILITY)) {
       Is_Named_Cultivar = !grepl("^(EDPIE|ADT)_", Genotype),
       TSI_Label_Clean = ifelse(TSI_Class == "Stable", "High TSI (TSI \u2265 1.0)", "Low TSI (TSI < 1.0)"),
       Short_Strategy_Readable = paste(
-        ifelse(grepl("^Early", Trajectory_Baseline), "Early Peak", "Late Peak"),
+        ifelse(grepl("^Ear", Trajectory_Baseline), "Early Peak", "Late Peak"),
         ifelse(Vigor_Baseline == VIGOR_HI, "High Vigor", "Low Vigor"),
         sep = " \u00b7 "
       ),
@@ -6982,7 +6741,7 @@ if (isTRUE(RUN_SECTION_9_GGE_STABILITY)) {
     "EDPIE_9576" = "#5 Global: EDPIE_9576 (Late Peak \u00b7 High Vigor \u00b7 Low TSI | High TCE)",
     "ADT_159"    = "#3 Global / Bridge: ADT_159 (Late Peak \u00b7 Low Vigor \u00b7 High TSI | Dual-Zone)",
     "ADT_150"    = "#1 PZ Specialist: ADT_150 (Late Peak \u00b7 Low Vigor \u00b7 High TSI | PZ Heat)",
-    "EDPIE_9600" = "#3 NWPZ Specialist: EDPIE_9600 (Early Peak \u00b7 High Vigor \u00b7 Low TSI | NWPZ)",
+    "EDPIE_9600" = "#3 NWPZ Specialist: EDPIE_9600 (Late Peak \u00b7 High Vigor \u00b7 Low TSI | NWPZ)",
     "CHECK_MEAN" = benchmark_label
   )
   focal_levels <- unname(focal_labels[c(focal_breeding_genos, "CHECK_MEAN")])
@@ -7169,7 +6928,7 @@ if (isTRUE(RUN_SECTION_9_GGE_STABILITY)) {
 }
 
 # ==============================================================================
-# SECTION 10: GWAS PHENOTYPE DATASHEET PACKAGE (GENOTYPE 1 TO 200) & ASSET INDEX
+# SECTION 10 [Downstream GWAS & Archival Index]: GWAS PHENOTYPE DATASHEET PACKAGE (GENOTYPE 1 TO 200) & ASSET INDEX
 # ==============================================================================
 cat(">>> Executing Section 10: GWAS Phenotype Datasheets (Plot_ID 1..200) & Master Asset Index...\n")
 
